@@ -240,18 +240,6 @@ From UI:
 4. Run evaluation
 5. Trigger failure demos
 
-## 5-Minute Judge Script
-
-1. Command Center overview and mode confirmation.
-2. Show Revenue At Risk and Recoverable Revenue.
-3. Select a failed payment opportunity.
-4. Explain AI diagnosis and evidence.
-5. Show policy PASS/FAIL checks.
-6. Show bounded recovery action and payment link.
-7. Show webhook/outcome verification trail.
-8. Confirm recovered revenue update on dashboard.
-9. Open Evaluation Center (Baseline vs RecoverIQ).
-10. Trigger one blocked/escalated/failure scenario.
 
 ## Security Posture
 
