@@ -24,3 +24,6 @@ frontend/src/*.js
 # Environment
 .env
 
+# System
+.DS_Store
+
