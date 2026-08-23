@@ -219,12 +219,17 @@ body {
 .workspace-grid {
   display: grid;
   gap: var(--space-4);
+  margin: var(--space-4) 0;
   align-items: start;
   grid-template-columns: minmax(0, 1.42fr) minmax(430px, 1fr);
 }
 
 .workspace-grid > .panel {
   min-width: 0;
+}
+
+.workspace-grid > .panel + .panel {
+  margin-top: 0;
 }
 
 .opportunities-panel {
@@ -236,8 +241,44 @@ body {
 }
 
 .cursor-mode-hint {
-  margin-top: 0;
+  margin-top: 2px;
   color: #1e3a8a;
+}
+
+.opportunities-panel .filter-grid {
+  gap: var(--space-3);
+}
+
+.opportunities-panel .filter-actions {
+  margin-top: 2px;
+}
+
+.opportunities-loading,
+.opportunities-empty,
+.table-scroll-tip,
+.cursor-actions,
+.cursor-helper-message {
+  margin-top: var(--space-2);
+}
+
+.opportunities-panel .pagination-row {
+  margin-top: var(--space-4);
+  padding-top: var(--space-1);
+  border-top: 1px solid #edf2f8;
+}
+
+.detail-empty,
+.detail-loading,
+.detail-content-grid {
+  margin-top: var(--space-3);
+}
+
+.detail-panel .section-subtitle {
+  margin-bottom: 2px;
+}
+
+.detail-panel .detail-grid {
+  gap: 12px;
 }
 
 @media (min-width: 1680px) {
@@ -268,6 +309,37 @@ body {
   display: grid;
   gap: var(--space-2);
   grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.form-field {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.form-field-full {
+  grid-column: 1 / -1;
+}
+
+.field-label {
+  margin: 0;
+  color: var(--text-soft);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.inline-field {
+  display: grid;
+  gap: 5px;
+}
+
+.field-label-inline {
+  font-size: 11px;
+}
+
+.evaluation-controls .btn {
+  align-self: end;
 }
 
 .field,
@@ -451,13 +523,25 @@ body {
   gap: var(--space-3);
   margin-top: var(--space-3);
   grid-template-columns: 320px 1fr;
+  align-items: start;
+}
+
+.run-history-card {
+  align-self: start;
+  height: fit-content;
+  max-height: min(78vh, 760px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
 .history-list {
   display: grid;
   gap: var(--space-2);
-  max-height: 280px;
-  overflow: auto;
+  max-height: min(62vh, 620px);
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding-right: 4px;
 }
 
 .history-item {
@@ -549,6 +633,10 @@ body {
     grid-template-columns: 1fr;
   }
 
+  .workspace-grid {
+    margin: var(--space-3) 0;
+  }
+
   .opportunities-panel,
   .detail-panel {
     min-height: auto;
@@ -576,6 +664,14 @@ body {
   .meta,
   .section-subtitle {
     font-size: 12px;
+  }
+
+  .evaluation-controls .btn {
+    align-self: stretch;
+  }
+
+  .history-list {
+    max-height: min(48vh, 500px);
   }
 
   .timeline-event-row {
@@ -611,6 +707,14 @@ body {
   .btn {
     padding: 8px 11px;
     font-size: 12px;
+  }
+
+  .field-label {
+    font-size: 11px;
+  }
+
+  .history-list {
+    max-height: 320px;
   }
 
   .timeline-group-header {

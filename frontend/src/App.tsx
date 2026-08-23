@@ -1019,77 +1019,98 @@ export function App() {
                 <h3 className="section-title">Opportunities</h3>
                 <p className="section-subtitle">Prioritize by risk, expected recovery, confidence, and policy outcome.</p>
                 <div className="filter-grid">
-                  <input
-                    value={searchInput}
-                    onChange={(event) => setSearchInput(event.target.value)}
-                    placeholder="Search id, reason, action, customer"
-                    className="field"
-                  />
+                  <div className="form-field form-field-full">
+                    <label htmlFor="opportunity-search" className="field-label">Search opportunities</label>
+                    <input
+                      id="opportunity-search"
+                      value={searchInput}
+                      onChange={(event) => setSearchInput(event.target.value)}
+                      placeholder="Search id, reason, action, customer"
+                      className="field"
+                    />
+                  </div>
                   <div className="filter-row" style={{ gridTemplateColumns: isMobile ? "1fr" : "repeat(2, minmax(0, 1fr))" }}>
-                    <select value={statusFilter} onChange={(event) => { resetCursorPagination(); setStatusFilter(event.target.value); }} className="select">
-                      <option value="ALL">All Status</option>
-                      <option value="OPEN">OPEN</option>
-                      <option value="RESOLVED">RESOLVED</option>
-                      <option value="CLOSED">CLOSED</option>
-                    </select>
-                    <select value={actionFilter} onChange={(event) => { resetCursorPagination(); setActionFilter(event.target.value); }} className="select">
-                      <option value="ALL">All Actions</option>
-                      <option value="RETRY">RETRY</option>
-                      <option value="DELAYED_RETRY">DELAYED_RETRY</option>
-                      <option value="RECOVERY_PROMPT">RECOVERY_PROMPT</option>
-                      <option value="ALTERNATE_PAYMENT_PATH">ALTERNATE_PAYMENT_PATH</option>
-                      <option value="ESCALATE">ESCALATE</option>
-                    </select>
-                    <select value={riskBucketFilter} onChange={(event) => { resetCursorPagination(); setRiskBucketFilter(event.target.value); }} className="select">
-                      <option value="ALL">All Risk Buckets</option>
-                      <option value="LOW">LOW</option>
-                      <option value="MEDIUM">MEDIUM</option>
-                      <option value="HIGH">HIGH</option>
-                    </select>
-                    <select
-                      value={sortBy}
-                      onChange={(event) => {
-                        const nextSort = event.target.value;
-                        if (opportunityPaginationMode === "cursor" && nextSort !== "updated_desc") {
-                          setCursorHelperMessage("Cursor mode supports Latest Updated sort only.");
-                          return;
-                        }
-                        resetCursorPagination();
-                        setSortBy(nextSort);
-                      }}
-                      className="select"
-                    >
-                      <option value="updated_desc">Latest Updated</option>
-                      <option value="risk_desc">Risk Amount High-Low</option>
-                      <option value="risk_asc">Risk Amount Low-High</option>
-                      <option value="confidence_desc">Confidence High-Low</option>
-                      <option value="probability_desc">Recovery Probability High-Low</option>
-                    </select>
-                    <select
-                      value={opportunityPaginationMode}
-                      onChange={(event) => {
-                        const mode = event.target.value === "cursor" ? "cursor" : "page";
-                        let cursorSortResetApplied = false;
-                        if (mode === "cursor" && sortBy !== "updated_desc") {
-                          setSortBy("updated_desc");
-                          cursorSortResetApplied = true;
-                        }
-                        setOpportunityPaginationMode(mode);
-                        resetCursorPagination();
-                        if (cursorSortResetApplied) {
-                          setCursorHelperMessage("Cursor mode supports Latest Updated sort only. Sort has been reset.");
-                        }
-                      }}
-                      className="select"
-                    >
-                      <option value="page">Page Pagination</option>
-                      <option value="cursor">Cursor Pagination</option>
-                    </select>
+                    <div className="form-field">
+                      <label htmlFor="opportunity-status" className="field-label">Status</label>
+                      <select id="opportunity-status" value={statusFilter} onChange={(event) => { resetCursorPagination(); setStatusFilter(event.target.value); }} className="select">
+                        <option value="ALL">All Status</option>
+                        <option value="OPEN">OPEN</option>
+                        <option value="RESOLVED">RESOLVED</option>
+                        <option value="CLOSED">CLOSED</option>
+                      </select>
+                    </div>
+                    <div className="form-field">
+                      <label htmlFor="opportunity-action" className="field-label">Action</label>
+                      <select id="opportunity-action" value={actionFilter} onChange={(event) => { resetCursorPagination(); setActionFilter(event.target.value); }} className="select">
+                        <option value="ALL">All Actions</option>
+                        <option value="RETRY">RETRY</option>
+                        <option value="DELAYED_RETRY">DELAYED_RETRY</option>
+                        <option value="RECOVERY_PROMPT">RECOVERY_PROMPT</option>
+                        <option value="ALTERNATE_PAYMENT_PATH">ALTERNATE_PAYMENT_PATH</option>
+                        <option value="ESCALATE">ESCALATE</option>
+                      </select>
+                    </div>
+                    <div className="form-field">
+                      <label htmlFor="opportunity-risk-bucket" className="field-label">Risk bucket</label>
+                      <select id="opportunity-risk-bucket" value={riskBucketFilter} onChange={(event) => { resetCursorPagination(); setRiskBucketFilter(event.target.value); }} className="select">
+                        <option value="ALL">All Risk Buckets</option>
+                        <option value="LOW">LOW</option>
+                        <option value="MEDIUM">MEDIUM</option>
+                        <option value="HIGH">HIGH</option>
+                      </select>
+                    </div>
+                    <div className="form-field">
+                      <label htmlFor="opportunity-sort" className="field-label">Sort by</label>
+                      <select
+                        id="opportunity-sort"
+                        value={sortBy}
+                        onChange={(event) => {
+                          const nextSort = event.target.value;
+                          if (opportunityPaginationMode === "cursor" && nextSort !== "updated_desc") {
+                            setCursorHelperMessage("Cursor mode supports Latest Updated sort only.");
+                            return;
+                          }
+                          resetCursorPagination();
+                          setSortBy(nextSort);
+                        }}
+                        className="select"
+                      >
+                        <option value="updated_desc">Latest Updated</option>
+                        <option value="risk_desc">Risk Amount High-Low</option>
+                        <option value="risk_asc">Risk Amount Low-High</option>
+                        <option value="confidence_desc">Confidence High-Low</option>
+                        <option value="probability_desc">Recovery Probability High-Low</option>
+                      </select>
+                    </div>
+                    <div className="form-field">
+                      <label htmlFor="opportunity-pagination-mode" className="field-label">Pagination mode</label>
+                      <select
+                        id="opportunity-pagination-mode"
+                        value={opportunityPaginationMode}
+                        onChange={(event) => {
+                          const mode = event.target.value === "cursor" ? "cursor" : "page";
+                          let cursorSortResetApplied = false;
+                          if (mode === "cursor" && sortBy !== "updated_desc") {
+                            setSortBy("updated_desc");
+                            cursorSortResetApplied = true;
+                          }
+                          setOpportunityPaginationMode(mode);
+                          resetCursorPagination();
+                          if (cursorSortResetApplied) {
+                            setCursorHelperMessage("Cursor mode supports Latest Updated sort only. Sort has been reset.");
+                          }
+                        }}
+                        className="select"
+                      >
+                        <option value="page">Page Pagination</option>
+                        <option value="cursor">Cursor Pagination</option>
+                      </select>
+                    </div>
                   </div>
                   {opportunityPaginationMode === "cursor" ? (
                     <p className="meta cursor-mode-hint">Cursor mode only supports Latest Updated.</p>
                   ) : null}
-                  <div className="action-row">
+                  <div className="action-row filter-actions">
                     <button
                       onClick={() => {
                         resetCursorPagination();
@@ -1119,10 +1140,10 @@ export function App() {
                   </div>
                 </div>
 
-                {isOpportunityLoading ? <p className="meta" style={{ marginTop: 10 }}>Refreshing opportunities...</p> : null}
+                {isOpportunityLoading ? <p className="meta opportunities-loading">Refreshing opportunities...</p> : null}
 
                 {opportunities.length === 0 ? (
-                  <div className="empty-block" style={{ marginTop: 12 }}>
+                  <div className="empty-block opportunities-empty">
                     <p className="meta" style={{ margin: 0 }}>
                       No opportunities match this filter set. Adjust filters or reset to inspect all active opportunities.
                     </p>
@@ -1191,7 +1212,7 @@ export function App() {
                 )}
 
                 {isTabletOrLower ? (
-                  <p className="meta" style={{ marginTop: 8 }}>
+                  <p className="meta table-scroll-tip">
                     Tip: horizontally scroll the table to compare risk, confidence, and policy context while keeping the opportunity column pinned.
                   </p>
                 ) : null}
@@ -1203,19 +1224,23 @@ export function App() {
                       : `Page ${opportunityPage} / ${opportunityTotalPages} | Showing ${opportunities.length} of ${opportunityTotalCount}`}
                   </p>
                   <div className="action-row">
-                    <select
-                      value={String(opportunityPageSize)}
-                      onChange={(event) => {
-                        resetCursorPagination();
-                        setOpportunityPageSize(parseNumber(event.target.value, 20));
-                      }}
-                      className="select"
-                    >
-                      <option value="10">10</option>
-                      <option value="20">20</option>
-                      <option value="40">40</option>
-                      <option value="80">80</option>
-                    </select>
+                    <div className="inline-field">
+                      <label htmlFor="opportunity-page-size" className="field-label field-label-inline">Rows per page</label>
+                      <select
+                        id="opportunity-page-size"
+                        value={String(opportunityPageSize)}
+                        onChange={(event) => {
+                          resetCursorPagination();
+                          setOpportunityPageSize(parseNumber(event.target.value, 20));
+                        }}
+                        className="select"
+                      >
+                        <option value="10">10</option>
+                        <option value="20">20</option>
+                        <option value="40">40</option>
+                        <option value="80">80</option>
+                      </select>
+                    </div>
                     <button
                       onClick={() => {
                         if (opportunityPaginationMode === "cursor") {
@@ -1254,7 +1279,7 @@ export function App() {
                 </div>
 
                 {opportunityPaginationMode === "cursor" ? (
-                  <div className="action-row" style={{ marginTop: 8 }}>
+                  <div className="action-row cursor-actions">
                     <button onClick={resetCursorPagination} className="btn" style={{ ...buttonStyle, padding: "6px 10px", fontSize: 12 }}>
                       Jump to Start
                     </button>
@@ -1268,20 +1293,20 @@ export function App() {
                   </div>
                 ) : null}
 
-                {cursorHelperMessage ? <p className="meta" style={{ marginTop: 8 }}>{cursorHelperMessage}</p> : null}
+                {cursorHelperMessage ? <p className="meta cursor-helper-message">{cursorHelperMessage}</p> : null}
               </article>
 
               <article className="panel detail-panel">
                 <h3 className="section-title">Opportunity Detail & Explainability</h3>
                 <p className="section-subtitle">From failed payment signal to verified recovered outcome.</p>
                 {!selectedItem ? (
-                  <div className="empty-block" style={{ marginTop: 12 }}>
+                  <div className="empty-block detail-empty">
                     <p className="meta" style={{ margin: 0 }}>Select an opportunity to inspect workflow evidence and policy traceability.</p>
                   </div>
                 ) : null}
-                {selectedItem && isDetailLoading ? <p className="meta" style={{ marginTop: 12 }}>Loading opportunity detail...</p> : null}
+                {selectedItem && isDetailLoading ? <p className="meta detail-loading">Loading opportunity detail...</p> : null}
                 {selectedItem && !isDetailLoading && detail ? (
-                  <div className="detail-grid" style={{ marginTop: 10 }}>
+                  <div className="detail-grid detail-content-grid">
                     <article className="detail-card">
                       <h4>Recovery Journey</h4>
                       <div className="stage-flow">
@@ -1391,22 +1416,34 @@ export function App() {
                 Held-out evaluation console comparing Baseline vs RecoverIQ on precision, recall, F1, false-positive cost, and recovered revenue.
               </p>
 
-              <div className="filter-row" style={{ marginTop: 10, gridTemplateColumns: isMobile ? "1fr" : "2fr 1fr 1fr 1fr auto" }}>
-                <input value={runDatasetVersion} onChange={(e) => setRunDatasetVersion(e.target.value)} placeholder="Dataset version" className="field" />
-                <select value={runSplit} onChange={(e) => setRunSplit(e.target.value)} className="select">
-                  <option value="TEST">TEST</option>
-                  <option value="VALIDATION">VALIDATION</option>
-                  <option value="DEVELOPMENT">DEVELOPMENT</option>
-                </select>
-                <input value={runGenerationSeed} onChange={(e) => setRunGenerationSeed(e.target.value)} placeholder="Seed" className="field" />
-                <input value={runTotalCases} onChange={(e) => setRunTotalCases(e.target.value)} placeholder="Total cases" className="field" />
+              <div className="filter-row evaluation-controls" style={{ marginTop: 10, gridTemplateColumns: isMobile ? "1fr" : "2fr 1fr 1fr 1fr auto" }}>
+                <div className="form-field">
+                  <label htmlFor="eval-dataset-version" className="field-label">Dataset version</label>
+                  <input id="eval-dataset-version" value={runDatasetVersion} onChange={(e) => setRunDatasetVersion(e.target.value)} placeholder="phase11_dataset" className="field" />
+                </div>
+                <div className="form-field">
+                  <label htmlFor="eval-split" className="field-label">Split</label>
+                  <select id="eval-split" value={runSplit} onChange={(e) => setRunSplit(e.target.value)} className="select">
+                    <option value="TEST">TEST</option>
+                    <option value="VALIDATION">VALIDATION</option>
+                    <option value="DEVELOPMENT">DEVELOPMENT</option>
+                  </select>
+                </div>
+                <div className="form-field">
+                  <label htmlFor="eval-seed" className="field-label">Generation seed</label>
+                  <input id="eval-seed" value={runGenerationSeed} onChange={(e) => setRunGenerationSeed(e.target.value)} placeholder="42" className="field" />
+                </div>
+                <div className="form-field">
+                  <label htmlFor="eval-total-cases" className="field-label">Total cases</label>
+                  <input id="eval-total-cases" value={runTotalCases} onChange={(e) => setRunTotalCases(e.target.value)} placeholder="1000" className="field" />
+                </div>
                 <button onClick={runEvaluation} disabled={isRunSubmitting} className="btn" style={{ ...buttonStyle, opacity: isRunSubmitting ? 0.7 : 1 }}>
                   {isRunSubmitting ? "Running..." : "Run Evaluation"}
                 </button>
               </div>
 
               <div className="eval-grid">
-                <div className="detail-card">
+                <div className="detail-card run-history-card">
                   <h4>Run History</h4>
                   {evaluationHistory.length === 0 ? (
                     <div className="empty-block"><p className="meta" style={{ margin: 0 }}>No evaluation runs yet.</p></div>
