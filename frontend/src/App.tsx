@@ -1565,7 +1565,35 @@ export function App() {
                   </section>
 
                   <section className="audit-panel">
-                    <h3>Audit Timeline</h3>
+                    <header className="audit-panel-header">
+                      <h3>Audit Timeline</h3>
+                      <div className="audit-panel-actions">
+                        <button
+                          onClick={() => {
+                            const updated: Record<string, boolean> = {};
+                            detail.timeline_groups.forEach((g) => {
+                              updated[g.group] = false;
+                            });
+                            setTimelineCollapsed(updated);
+                          }}
+                          className="btn btn-inline"
+                        >
+                          Expand All
+                        </button>
+                        <button
+                          onClick={() => {
+                            const updated: Record<string, boolean> = {};
+                            detail.timeline_groups.forEach((g) => {
+                              updated[g.group] = true;
+                            });
+                            setTimelineCollapsed(updated);
+                          }}
+                          className="btn btn-inline"
+                        >
+                          Collapse All
+                        </button>
+                      </div>
+                    </header>
                     {detail.timeline_groups.length === 0 ? (
                       <p className="helper-message">No audit events available.</p>
                     ) : (
