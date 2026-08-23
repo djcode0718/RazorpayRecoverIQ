@@ -541,6 +541,10 @@ export function App() {
     };
   }, []);
 
+  useEffect(() => {
+    setSelectedOpportunityId(null);
+  }, [activeTab]);
+
   const isTabletOrLower = viewportWidth < 1024;
   const isMobile = viewportWidth < 768;
 
@@ -565,6 +569,7 @@ export function App() {
   const runDemoMutation = async (endpoint: "/api/v1/demo/reset-core-recovery" | "/api/v1/demo/seed-core-recovery") => {
     setIsDemoMutating(true);
     setDemoMutationMessage("");
+    setSelectedOpportunityId(null);
     try {
       const response = await fetch(endpoint, { method: "POST" });
       const payload = (await response.json()) as { success?: boolean; error?: { message?: string } };
@@ -630,7 +635,7 @@ export function App() {
 
     const hasSelected = payload.data.items.some((item) => item.id === selectedOpportunityId);
     if (!hasSelected) {
-      setSelectedOpportunityId(payload.data.items[0].id);
+      setSelectedOpportunityId(null);
     }
 
     if (showLoader) {
@@ -839,6 +844,7 @@ export function App() {
   const loadCommandCenter = () => {
     setIsLoading(true);
     setError(null);
+    setSelectedOpportunityId(null);
 
     Promise.all([loadSummary(), loadOpportunities(false), loadEvaluationHistory(), loadFailureScenarios(), loadRazorpayStatus()])
       .catch((fetchError: Error) => {
@@ -1507,7 +1513,18 @@ export function App() {
                       onCollapsedChange={updateSelectedTimelineCollapseState}
                     />
 
-                    <details className="audit-trail-disclosure" style={{ marginTop: 12 }}>
+                    <details 
+                      className="audit-trail-disclosure" 
+                      style={{ marginTop: 12 }}
+                      onToggle={(e) => {
+                        if (e.currentTarget.open) {
+                          const target = e.currentTarget;
+                          setTimeout(() => {
+                            target.scrollIntoView({ behavior: "smooth", block: "start" });
+                          }, 80);
+                        }
+                      }}
+                    >
                       <summary style={{ cursor: "pointer", color: "#475569", fontSize: 13, fontWeight: 600 }}>
                         View Raw Audit Trail
                       </summary>
