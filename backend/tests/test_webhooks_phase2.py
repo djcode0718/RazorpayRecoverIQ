@@ -140,7 +140,7 @@ def test_invalid_signature_rejected_and_recorded(tmp_path: Path) -> None:
     client, secret = _build_client(tmp_path)
     payload = _payment_failed_payload(event_id="evt_002", payment_id="pay_002", created_at=1724300001)
 
-    response = _post_webhook(client, payload, secret, tamper_signature=True)
+    response = _post_webhook(client, payload, secret, tamper_signature=True, header_event_id="evt_002")
     assert response.status_code == 401
     body = response.json()
     assert body["success"] is False
@@ -159,6 +159,28 @@ def test_invalid_signature_rejected_and_recorded(tmp_path: Path) -> None:
         assert len(audits) == 1
     finally:
         session.close()
+
+
+def test_invalid_signature_returns_before_json_parsing(tmp_path: Path, monkeypatch) -> None:
+    client, _ = _build_client(tmp_path)
+
+    def _fail_if_called(*args, **kwargs):
+        raise AssertionError("json.loads should not be called for invalid signatures")
+
+    monkeypatch.setattr("app.webhooks.json.loads", _fail_if_called)
+
+    response = client.post(
+        "/api/v1/webhooks/razorpay",
+        content=b"{not-valid-json",
+        headers={
+            "x-razorpay-signature": "invalid-signature",
+            "x-razorpay-event-id": "evt_invalid_sig_early_return",
+            "content-type": "application/json",
+        },
+    )
+
+    assert response.status_code == 401
+    assert b"INVALID_SIGNATURE" in response.content
 
 
 def test_duplicate_event_is_idempotent(tmp_path: Path) -> None:
@@ -233,12 +255,14 @@ def test_conflicting_transition_is_rejected(tmp_path: Path) -> None:
 
 
 def test_invalid_json_is_rejected_and_audited(tmp_path: Path) -> None:
-    client, _ = _build_client(tmp_path)
+    client, secret = _build_client(tmp_path)
+    raw = b"not-json"
+    signature = _sign(raw, secret)
 
     response = client.post(
         "/api/v1/webhooks/razorpay",
-        content=b"not-json",
-        headers={"x-razorpay-signature": "invalid", "content-type": "application/json"},
+        content=raw,
+        headers={"x-razorpay-signature": signature, "content-type": "application/json"},
     )
 
     assert response.status_code == 400

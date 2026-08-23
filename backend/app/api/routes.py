@@ -68,6 +68,16 @@ def _safe_dict(data: dict | None) -> dict:
     return data if isinstance(data, dict) else {}
 
 
+def _safe_json_object(raw_value: str | None) -> dict:
+    if not raw_value:
+        return {}
+    try:
+        parsed = json.loads(raw_value)
+    except Exception:
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
+
+
 def _parse_stage(event_type: str) -> str | None:
     prefix = "workflow.stage."
     if event_type.startswith(prefix):
@@ -262,7 +272,13 @@ def _latest_policy_for_decision(db: Session, decision_id: int) -> PolicyEvaluati
 
 @router.get("/dashboard/summary")
 def dashboard_summary(db: Session = Depends(get_db), settings: Settings = Depends(get_settings)) -> dict:
-    mode = "razorpay_test" if settings.payment_adapter_mode.lower() == "razorpay_test" else "simulation"
+    mode = (
+        "razorpay_test"
+        if settings.payment_adapter_mode.lower() == "razorpay_test"
+        and settings.razorpay_test_mode_keys
+        and not settings.razorpay_live_mode_detected
+        else "simulation"
+    )
     mode_label = "Razorpay Test Mode" if mode == "razorpay_test" else "Simulation Mode"
 
     revenue_at_risk_minor = db.execute(
@@ -1230,21 +1246,47 @@ def razorpay_integration_status(db: Session = Depends(get_db), settings: Setting
     live_mode_detected = settings.razorpay_live_mode_detected
     credentials_configured = settings.razorpay_configured
     credentials_test_mode = settings.razorpay_test_mode_keys and credentials_configured and not live_mode_detected
-    test_mode = adapter_test_mode or credentials_test_mode
+    test_mode = adapter_test_mode and credentials_test_mode
     webhook_configured = bool((settings.razorpay_webhook_secret or "").strip())
 
     api_connectivity = False
     api_connectivity_reason = None
-    if adapter_test_mode and credentials_configured and not live_mode_detected:
+    if test_mode:
         api_connectivity, api_connectivity_reason = check_razorpay_api_connectivity(settings)
     elif live_mode_detected:
         api_connectivity_reason = "live_mode_not_allowed"
-    elif credentials_test_mode:
+    elif not adapter_test_mode:
         api_connectivity_reason = "adapter_mode_not_razorpay_test"
+    elif not credentials_configured:
+        api_connectivity_reason = "credentials_not_configured"
+    elif not settings.razorpay_test_mode_keys:
+        api_connectivity_reason = "razorpay_test_mode_credentials_required"
     else:
         api_connectivity_reason = "integration_not_configured"
 
     last_event = db.execute(select(WebhookEvent).order_by(WebhookEvent.id.desc())).scalars().first()
+    links = db.execute(
+        select(RecoveryPaymentLink).order_by(RecoveryPaymentLink.updated_at.desc(), RecoveryPaymentLink.id.desc()).limit(8)
+    ).scalars().all()
+
+    last_successful_razorpay_operation = None
+    for link in links:
+        parsed = _safe_json_object(link.external_response_reference)
+        adapter_name = str(parsed.get("adapter") or "").strip().lower()
+        if adapter_name != "razorpay_test":
+            continue
+        response_payload = parsed.get("response") if isinstance(parsed.get("response"), dict) else {}
+        short_url = str(parsed.get("short_url") or response_payload.get("short_url") or "").strip() or None
+        last_successful_razorpay_operation = {
+            "operation": "payment_link_created",
+            "payment_link_id": link.payment_link_id,
+            "reference_id": link.payment_link_reference_id,
+            "short_url": short_url,
+            "status": link.status,
+            "updated_at": link.updated_at.isoformat() if link.updated_at else None,
+        }
+        break
+
     return {
         "success": True,
         "data": {
@@ -1258,6 +1300,8 @@ def razorpay_integration_status(db: Session = Depends(get_db), settings: Setting
             "last_event": last_event.event_type if last_event is not None else None,
             "last_event_id": last_event.razorpay_event_id if last_event is not None else None,
             "last_event_status": last_event.processing_status if last_event is not None else None,
+            "last_event_received_at": last_event.received_at.isoformat() if last_event and last_event.received_at else None,
+            "last_successful_razorpay_operation": last_successful_razorpay_operation,
         },
     }
 

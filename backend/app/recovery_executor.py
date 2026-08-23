@@ -157,6 +157,7 @@ def execute_recovery_attempt(
             "adapter": link_result.provider,
             "executor_version": EXECUTOR_VERSION,
             "attempt_id": attempt.id,
+            "short_url": link_result.short_url,
             "response": link_result.raw_response,
         }, separators=(",", ":")),
     )

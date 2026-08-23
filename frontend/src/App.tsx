@@ -170,6 +170,18 @@ type RazorpayStatusResponse = {
     api_connectivity: boolean;
     api_connectivity_reason: string | null;
     webhook_configured: boolean;
+    last_event?: string | null;
+    last_event_id?: string | null;
+    last_event_status?: string | null;
+    last_event_received_at?: string | null;
+    last_successful_razorpay_operation?: {
+      operation: string;
+      payment_link_id: string;
+      reference_id: string;
+      short_url: string | null;
+      status: string;
+      updated_at: string | null;
+    } | null;
   };
   error?: { code?: string; message?: string };
 };
@@ -969,9 +981,21 @@ export function App() {
                   Simulation and Razorpay Test Mode are intentionally separated to prevent interpretation errors during demos.
                 </p>
                 {razorpayStatus ? (
-                  <p className="mode-meta">
-                    Razorpay checks: Test Mode {razorpayStatus.test_mode ? "ON" : "OFF"} | Adapter {razorpayStatus.adapter_mode || "unknown"} | Webhook {razorpayStatus.webhook_configured ? "configured" : "missing"} | Live Mode {razorpayStatus.live_mode_detected ? "detected" : "not detected"} | API connectivity {razorpayStatus.api_connectivity ? "healthy" : "unavailable"}
-                  </p>
+                  <>
+                    <p className="mode-meta">
+                      Razorpay checks: Test Mode {razorpayStatus.test_mode ? "ON" : "OFF"} | Adapter {razorpayStatus.adapter_mode || "unknown"} | Webhook {razorpayStatus.webhook_configured ? "configured" : "missing"} | Live Mode {razorpayStatus.live_mode_detected ? "detected" : "not detected"} | API connectivity {razorpayStatus.api_connectivity ? "connected" : "not connected"}{razorpayStatus.api_connectivity_reason ? ` (${razorpayStatus.api_connectivity_reason})` : ""}
+                    </p>
+                    <p className="mode-meta">
+                      Last successful Razorpay API operation: {razorpayStatus.last_successful_razorpay_operation
+                        ? `${razorpayStatus.last_successful_razorpay_operation.operation} ${razorpayStatus.last_successful_razorpay_operation.payment_link_id} (${formatIsoTimestamp(razorpayStatus.last_successful_razorpay_operation.updated_at)})`
+                        : "none"}
+                    </p>
+                    <p className="mode-meta">
+                      Last webhook event: {razorpayStatus.last_event
+                        ? `${razorpayStatus.last_event} (${razorpayStatus.last_event_status || "unknown"}) ${formatIsoTimestamp(razorpayStatus.last_event_received_at || null)}`
+                        : "none"}
+                    </p>
+                  </>
                 ) : (
                   <p className="mode-meta">Razorpay integration status not available.</p>
                 )}
