@@ -518,6 +518,29 @@ export function App() {
     return () => window.removeEventListener("resize", onResize);
   }, []);
 
+  useEffect(() => {
+    if (activeTab === "opportunities" && selectedOpportunityId !== null) {
+      document.body.classList.add("drawer-open");
+    } else {
+      document.body.classList.remove("drawer-open");
+    }
+    return () => {
+      document.body.classList.remove("drawer-open");
+    };
+  }, [selectedOpportunityId, activeTab]);
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setSelectedOpportunityId(null);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, []);
+
   const isTabletOrLower = viewportWidth < 1024;
   const isMobile = viewportWidth < 768;
 
@@ -1048,7 +1071,7 @@ export function App() {
         )}
 
         {activeTab === "opportunities" && (
-          <section className={`workspace-grid ${selectedOpportunityId === null ? "workspace-grid-full" : ""}`}>
+          <div className="opportunities-workspace">
               <article className="panel opportunities-panel">
                 <h3 className="section-title">Opportunities</h3>
                 <p className="section-subtitle">Prioritize by risk, expected recovery, confidence, and policy outcome.</p>
@@ -1330,7 +1353,13 @@ export function App() {
                 {cursorHelperMessage ? <p className="meta cursor-helper-message">{cursorHelperMessage}</p> : null}
               </article>
 
-              <article className="panel detail-panel">
+              <div 
+                className={`drawer-backdrop ${selectedOpportunityId !== null ? "open" : ""}`}
+                onClick={() => setSelectedOpportunityId(null)}
+              />
+
+              <aside className={`detail-drawer ${selectedOpportunityId !== null ? "open" : ""}`}>
+                <article className="panel detail-panel">
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
                   <h3 className="section-title" style={{ margin: 0 }}>Opportunity Detail & Explainability</h3>
                   {selectedOpportunityId !== null && (
@@ -1494,7 +1523,8 @@ export function App() {
                   </div>
                 ) : null}
               </article>
-            </section>
+            </aside>
+          </div>
         )}
 
         {activeTab === "evaluation" && (
