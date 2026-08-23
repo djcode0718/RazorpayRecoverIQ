@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type CSSProperties } from "react";
+import { useEffect, useMemo, useState, Fragment, type CSSProperties } from "react";
 import "./app.css";
 
 type Summary = {
@@ -380,13 +380,7 @@ const JOURNEY_STAGES = [
   "RECOVERED",
 ] as const;
 
-const DEFAULT_BUTTON_STYLE: CSSProperties = {
-  border: "1px solid transparent",
-  borderRadius: 10,
-  padding: "9px 14px",
-  cursor: "pointer",
-  fontWeight: 600,
-};
+const DEFAULT_BUTTON_STYLE: CSSProperties = {};
 
 function formatMinorCurrency(minorUnits: number): string {
   return new Intl.NumberFormat("en-IN", {
@@ -556,6 +550,15 @@ export function App() {
   const [selectedOpportunityId, setSelectedOpportunityId] = useState<number | null>(null);
   const [detail, setDetail] = useState<OpportunityDetail | null>(null);
 
+  const [activeTab, setActiveTab] = useState<string>("Command Center");
+  const [expandedScenarioId, setExpandedScenarioId] = useState<string | null>(null);
+
+  const handleTabChange = (newTab: string) => {
+    setActiveTab(newTab);
+    setSelectedOpportunityId(null);
+    setDetail(null);
+  };
+
   const [statusFilter, setStatusFilter] = useState<string>("ALL");
   const [actionFilter, setActionFilter] = useState<string>("ALL");
   const [searchInput, setSearchInput] = useState<string>("");
@@ -658,7 +661,7 @@ export function App() {
 
     const hasSelected = payload.data.items.some((item) => item.id === selectedOpportunityId);
     if (!hasSelected) {
-      setSelectedOpportunityId(payload.data.items[0].id);
+      setSelectedOpportunityId(null);
     }
 
     if (showLoader) {
@@ -803,6 +806,8 @@ export function App() {
   const loadCommandCenter = async () => {
     setIsLoading(true);
     setError(null);
+    setSelectedOpportunityId(null);
+    setDetail(null);
     try {
       await Promise.all([loadSummary(), loadOpportunities(false), loadEvaluationHistory(), loadFailureScenarios(), loadRazorpayStatus()]);
     } catch (fetchError) {
@@ -840,6 +845,31 @@ export function App() {
       setError(fetchError.message || "Unable to load evaluation insights.");
     });
   }, [selectedEvaluationRunId]);
+
+  // Lock body scroll when drawer is open
+  useEffect(() => {
+    if (selectedOpportunityId !== null) {
+      document.body.classList.add("drawer-open");
+    } else {
+      document.body.classList.remove("drawer-open");
+    }
+    return () => {
+      document.body.classList.remove("drawer-open");
+    };
+  }, [selectedOpportunityId]);
+
+  // Close drawer on Escape key press
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setSelectedOpportunityId(null);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, []);
 
   useEffect(() => {
     if (!autoRefreshEnabled) {
@@ -914,13 +944,12 @@ export function App() {
           </div>
           <div className="hero-actions">
             <div className="mode-chip">{modeLabel}</div>
-            <button onClick={loadCommandCenter} className="btn btn-primary" style={DEFAULT_BUTTON_STYLE}>
+            <button onClick={loadCommandCenter} className="btn btn-primary">
               Refresh
             </button>
             <button
               onClick={() => runDemoMutation("/api/v1/demo/seed-core-recovery")}
               className="btn btn-secondary"
-              style={{ ...DEFAULT_BUTTON_STYLE, opacity: isDemoMutating ? 0.7 : 1 }}
               disabled={isDemoMutating}
             >
               Seed State
@@ -928,7 +957,6 @@ export function App() {
             <button
               onClick={() => runDemoMutation("/api/v1/demo/reset-core-recovery")}
               className="btn btn-tertiary"
-              style={{ ...DEFAULT_BUTTON_STYLE, opacity: isDemoMutating ? 0.7 : 1 }}
               disabled={isDemoMutating}
             >
               Empty State
@@ -944,539 +972,462 @@ export function App() {
           </div>
         </header>
 
-        <section className="panel health-panel">
-          <h2>Operating Health</h2>
-          <div className="health-grid">
-            {healthItems.map((item) => (
-              <article key={item.label} className="health-item">
-                <div className="health-head">
-                  <span>{item.label}</span>
-                  <Badge text={item.healthy ? "HEALTHY" : "DEGRADED"} tone={item.healthy ? "good" : "bad"} />
-                </div>
-                <p>{item.note}</p>
-              </article>
-            ))}
+        {demoMutationMessage ? <p className="helper-message">{demoMutationMessage}</p> : null}
+
+        {error ? (
+          <section className="panel error-panel">
+            <h2>Unable to load data</h2>
+            <p>{error}</p>
+            <button onClick={loadCommandCenter} className="btn btn-danger">
+              Retry
+            </button>
+          </section>
+        ) : null}
+
+        <nav className="tab-navigation">
+          <div className="tab-track">
+            {["Command Center", "Opportunities", "Evaluation", "Failure Demos", "Readiness"].map((tab) => {
+              const isActive = activeTab === tab;
+              return (
+                <button
+                  key={tab}
+                  className={`tab-btn ${isActive ? "active" : ""}`}
+                  onClick={() => handleTabChange(tab)}
+                >
+                  {tab}
+                </button>
+              );
+            })}
           </div>
-          {demoMutationMessage ? <p className="helper-message">{demoMutationMessage}</p> : null}
-        </section>
+        </nav>
 
         {isLoading ? (
           <section className="panel loading-panel">
             <h2>Loading command center</h2>
             <p>Fetching live metrics, opportunities, and evaluation telemetry.</p>
           </section>
-        ) : null}
-
-        {!isLoading && error ? (
-          <section className="panel error-panel">
-            <h2>Unable to load data</h2>
-            <p>{error}</p>
-            <button onClick={loadCommandCenter} className="btn btn-danger" style={DEFAULT_BUTTON_STYLE}>
-              Retry
-            </button>
-          </section>
-        ) : null}
-
-        {!isLoading && !error && summary ? (
+        ) : (
           <>
-            <section className="panel">
-              <h2>Revenue Recovery Snapshot</h2>
-              <p className="panel-copy">Live business indicators from the active operating mode.</p>
-              {isEmptySummary(summary) ? (
-                <div className="empty-state">
-                  <h3>No active revenue recovery yet</h3>
-                  <p>Use Seed State to load opportunities, or wait for failed payments to enter the recovery workflow.</p>
-                </div>
-              ) : (
-                <div className="kpi-grid">
-                  <KpiCard title="Revenue At Risk" value={formatMinorCurrency(summary.revenue_at_risk_minor)} note="Total failed-payment exposure" />
-                  <KpiCard title="Recoverable Revenue" value={formatMinorCurrency(summary.recoverable_revenue_minor)} note="Policy-eligible exposure" />
-                  <KpiCard title="Recovered Revenue" value={formatMinorCurrency(summary.gross_recovered_minor)} note={`Coverage ${formatPercent(recoveredCoverage)}`} />
-                  <KpiCard title="Recovery Rate" value={formatPercent(summary.recovery_rate)} note="Recovered / recoverable" />
-                  <KpiCard title="Active Opportunities" value={String(summary.active_opportunities)} note="Open recovery workflows" />
-                  <KpiCard title="Recovery Attempts" value={String(summary.recovery_attempts)} note="Total attempts executed" />
-                </div>
-              )}
-            </section>
-
-            <section className="workspace-grid">
-              <article className="panel detail-primary">
-                <h2>Opportunity Detail</h2>
-                <p className="panel-copy">Primary recovery workflow view from failed payment to verified outcome.</p>
-
-                {!selectedItem ? (
-                  <div className="empty-state">
-                    <h3>No opportunity selected</h3>
-                    <p>Select an opportunity to inspect AI diagnosis, policy authorization, payment action, and audit trace.</p>
-                  </div>
-                ) : null}
-
-                {selectedItem && isDetailLoading ? <p className="helper-message">Loading opportunity detail...</p> : null}
-
-                {selectedItem && detail && !isDetailLoading ? (
-                  <div className="detail-layout">
-                    <section className="journey-panel">
-                      <h3>Recovery Timeline</h3>
-                      <div className="journey-track" aria-label="Recovery timeline">
-                        {JOURNEY_STAGES.map((stage, index) => {
-                          const reached = journeyState?.reached[index] || false;
-                          const active = (journeyState?.activeIndex || 0) === index;
-                          return (
-                            <div key={stage} className={`journey-stage ${reached ? "reached" : ""} ${active ? "active" : ""}`}>
-                              <span>{stage}</span>
-                              {index < JOURNEY_STAGES.length - 1 ? <span className="journey-arrow">↓</span> : null}
-                            </div>
-                          );
-                        })}
-                      </div>
-                      <p className="helper-message">
-                        Current state: <strong>{toTitle(detail.recovery_state.current || "pending")}</strong>
-                      </p>
-                    </section>
-
-                    <section className="insight-grid">
-                      <article className="info-card">
-                        <h3>AI Explanation</h3>
-                        <p><strong>Diagnosis:</strong> {detail.evidence.diagnosis || "-"}</p>
-                        <p><strong>Evidence:</strong> {detail.evidence.decision_source || "Model signal unavailable"}</p>
-                        <p><strong>Confidence:</strong> {formatPercent(detail.opportunity.confidence)}</p>
-                        <p><strong>Recommended Action:</strong> {detail.action_traceability.recommended_action || "-"}</p>
-                      </article>
-
-                      <article className="info-card">
-                        <h3>Deterministic Policy</h3>
-                        <p className={`policy-decision ${policyDecision === "ALLOW" ? "allow" : policyDecision === "BLOCK" ? "block" : "pending"}`}>
-                          POLICY: {policyDecision}
-                        </p>
-                        <div className="check-grid">
-                          {Object.entries(detail.policy_checks.checks).map(([key, passed]) => (
-                            <div key={key} className="check-item">
-                              <span>{getPolicyCheckLabel(key)}</span>
-                              <span className={passed ? "check-pass" : "check-fail"}>{passed ? "✓" : "✕"}</span>
-                            </div>
-                          ))}
-                          {Object.keys(detail.policy_checks.checks).length === 0 ? <p className="helper-message">No policy checks reported.</p> : null}
+            {activeTab === "Command Center" && (
+              <>
+                <section className="panel health-panel">
+                  <h2>Operating Health</h2>
+                  <div className="health-grid">
+                    {healthItems.map((item) => (
+                      <article key={item.label} className="health-item">
+                        <div className="health-head">
+                          <span>{item.label}</span>
+                          <Badge text={item.healthy ? "HEALTHY" : "DEGRADED"} tone={item.healthy ? "good" : "bad"} />
                         </div>
-                        <p className="helper-message">Execution is authorized by policy controls, not by AI recommendation.</p>
+                        <p>{item.note}</p>
                       </article>
+                    ))}
+                  </div>
+                </section>
 
-                      <article className="info-card">
-                        <h3>Razorpay Payment Link</h3>
-                        {latestAttemptWithLink?.payment_link ? (
-                          <>
-                            <p><strong>Payment Link ID:</strong> {latestAttemptWithLink.payment_link.payment_link_id}</p>
-                            <p><strong>Status:</strong> {latestAttemptWithLink.payment_link.status}</p>
-                            <p><strong>Reference:</strong> {latestAttemptWithLink.payment_link.payment_link_reference_id}</p>
-                            {paymentLinkUrl ? (
-                              <a href={paymentLinkUrl} target="_blank" rel="noreferrer" className="pay-link">
-                                Open Payment Link
-                              </a>
-                            ) : (
-                              <p className="helper-message">Payment link URL is not exposed by this detail payload.</p>
-                            )}
-                          </>
-                        ) : (
-                          <p className="helper-message">No Razorpay payment link created for the selected opportunity yet.</p>
-                        )}
-                      </article>
+                {summary && (
+                  <section className="panel">
+                    <h2>Revenue Recovery Snapshot</h2>
+                    <p className="panel-copy">Live business indicators from the active operating mode.</p>
+                    {isEmptySummary(summary) ? (
+                      <div className="empty-state">
+                        <h3>No active revenue recovery yet</h3>
+                        <p>Use Seed State to load opportunities, or wait for failed payments to enter the recovery workflow.</p>
+                      </div>
+                    ) : (
+                      <div className="kpi-grid">
+                        <KpiCard title="Revenue At Risk" value={formatMinorCurrency(summary.revenue_at_risk_minor)} note="Total failed-payment exposure" />
+                        <KpiCard title="Recoverable Revenue" value={formatMinorCurrency(summary.recoverable_revenue_minor)} note="Policy-eligible exposure" />
+                        <KpiCard title="Recovered Revenue" value={formatMinorCurrency(summary.gross_recovered_minor)} note={`Coverage ${formatPercent(recoveredCoverage)}`} />
+                        <KpiCard title="Recovery Rate" value={formatPercent(summary.recovery_rate)} note="Recovered / recoverable" />
+                        <KpiCard title="Active Opportunities" value={String(summary.active_opportunities)} note="Open recovery workflows" />
+                        <KpiCard title="Recovery Attempts" value={String(summary.recovery_attempts)} note="Total attempts executed" />
+                      </div>
+                    )}
+                  </section>
+                )}
+              </>
+            )}
 
-                      <article className="info-card">
-                        <h3>Outcome</h3>
-                        <p><strong>Outcome Status:</strong> {detail.semantic_states?.business_outcome || detail.action_traceability.latest_verified_outcome || "NOT_RECOVERED"}</p>
-                        <p><strong>Recovered Revenue:</strong> {formatMinorCurrency(detail.economics.gross_recovered_minor)}</p>
-                        <p><strong>Net Recovered:</strong> {formatMinorCurrency(detail.economics.net_recovered_minor)}</p>
-                        <p><strong>Attempts:</strong> {detail.action_traceability.attempt_count}</p>
-                      </article>
-                    </section>
+            {activeTab === "Opportunities" && (
+              <section className="workspace-grid">
+                <article className="panel opportunities-secondary">
+                  <h2>Opportunities</h2>
+                  <p className="panel-copy">Revenue opportunities ranked for action with policy and outcome context.</p>
 
-                    <section className="audit-panel">
-                      <h3>Audit Timeline</h3>
-                      {detail.timeline_groups.length === 0 ? (
-                        <p className="helper-message">No audit events available.</p>
-                      ) : (
-                        <div className="audit-group-list">
-                          {detail.timeline_groups.map((group) => {
-                            const isCollapsed = timelineCollapsed[group.group] || false;
+                  <div className="filter-grid">
+                    <div className="field-block search-field">
+                      <label htmlFor="search">Search</label>
+                      <input
+                        id="search"
+                        className="text-input"
+                        value={searchInput}
+                        onChange={(event) => setSearchInput(event.target.value)}
+                        placeholder="customer, reason, action"
+                      />
+                    </div>
+                    <div className="field-block">
+                      <label htmlFor="status">Status</label>
+                      <select id="status" className="select-input" value={statusFilter} onChange={(event) => { setOpportunityPage(1); setStatusFilter(event.target.value); }}>
+                        <option value="ALL">All</option>
+                        <option value="OPEN">OPEN</option>
+                        <option value="RESOLVED">RESOLVED</option>
+                        <option value="CLOSED">CLOSED</option>
+                      </select>
+                    </div>
+                    <div className="field-block">
+                      <label htmlFor="action">Recovery Action</label>
+                      <select id="action" className="select-input" value={actionFilter} onChange={(event) => { setOpportunityPage(1); setActionFilter(event.target.value); }}>
+                        <option value="ALL">All</option>
+                        <option value="RETRY">RETRY</option>
+                        <option value="DELAYED_RETRY">DELAYED_RETRY</option>
+                        <option value="RECOVERY_PROMPT">RECOVERY_PROMPT</option>
+                        <option value="ALTERNATE_PAYMENT_PATH">ALTERNATE_PAYMENT_PATH</option>
+                        <option value="ESCALATE">ESCALATE</option>
+                      </select>
+                    </div>
+                    <div className="filter-actions">
+                      <button onClick={() => { setOpportunityPage(1); setSearchFilter(searchInput); }} className="btn btn-primary">
+                        Apply
+                      </button>
+                      <button
+                        onClick={() => {
+                          setSearchInput("");
+                          setSearchFilter("");
+                          setStatusFilter("ALL");
+                          setActionFilter("ALL");
+                          setOpportunityPage(1);
+                        }}
+                        className="btn btn-tertiary"
+                      >
+                        Reset
+                      </button>
+                    </div>
+                  </div>
+
+                  {isOpportunityLoading ? <p className="helper-message">Refreshing opportunities...</p> : null}
+
+                  {opportunities.length === 0 ? (
+                    <div className="empty-state">
+                      <h3>No opportunities found</h3>
+                      <p>Try a broader filter set or seed the simulation.</p>
+                    </div>
+                  ) : (
+                    <div className="table-wrapper">
+                      <table className="opportunities-table">
+                        <thead>
+                          <tr>
+                            <th>Opportunity</th>
+                            <th>Failure</th>
+                            <th>Amount</th>
+                            <th>Expected Recovery</th>
+                            <th>Confidence</th>
+                            <th>Policy</th>
+                            <th>Recovery Action</th>
+                            <th>Outcome</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {opportunities.map((item) => {
+                            const selected = item.id === selectedOpportunityId;
                             return (
-                              <article key={group.group} className="audit-group">
-                                <header>
-                                  <div>
-                                    <strong>{group.group}</strong>
-                                    <div className="badge-row">
-                                      <Badge text={`PASS ${group.counts.pass}`} tone="good" />
-                                      <Badge text={`FAIL ${group.counts.fail}`} tone="bad" />
-                                      <Badge text={`PENDING ${group.counts.pending}`} tone="warn" />
-                                    </div>
+                              <tr key={item.id} className={selected ? "selected-row" : ""} onClick={() => setSelectedOpportunityId(item.id)}>
+                                <td>
+                                  <p className="row-title">#{item.id}</p>
+                                  <p className="row-subtitle">{item.customer_reference || "-"}</p>
+                                </td>
+                                <td>
+                                  <p>{item.failure_category || "-"}</p>
+                                  <p className="row-subtitle">{item.failure_reason || "-"}</p>
+                                </td>
+                                <td>{formatMinorCurrency(item.amount_at_risk_minor)}</td>
+                                <td>
+                                  {formatMinorCurrency(item.expected_recovery_minor)}
+                                  <p className="row-subtitle">Net {formatMinorCurrency(item.expected_net_recovery_minor)}</p>
+                                </td>
+                                <td>
+                                  <div className="badge-row">
+                                    <Badge text={formatPercent(item.confidence)} tone={toToneForRisk(item.risk_bucket)} />
                                   </div>
-                                  <button
-                                    onClick={() => setTimelineCollapsed((prev) => ({ ...prev, [group.group]: !isCollapsed }))}
-                                    className="btn btn-inline"
-                                    style={DEFAULT_BUTTON_STYLE}
-                                  >
-                                    {isCollapsed ? "Expand" : "Collapse"}
-                                  </button>
-                                </header>
-                                {!isCollapsed ? (
-                                  <div className="audit-event-list">
-                                    {group.events.map((event, index) => (
-                                      <details key={`${group.group}-${index}`} className="audit-event">
-                                        <summary>
-                                          <Badge
-                                            text={event.outcome_status.toUpperCase()}
-                                            tone={event.outcome_status === "pass" ? "good" : event.outcome_status === "fail" ? "bad" : "warn"}
-                                          />
-                                          <span>{event.event_type}</span>
-                                          <span>{formatIsoTimestamp(event.timestamp)}</span>
-                                        </summary>
-                                        <div>
-                                          <p><strong>Actor:</strong> {event.actor_type}</p>
-                                          <p><strong>Stage:</strong> {event.stage || "-"}</p>
-                                          <p><strong>Reason:</strong> {event.reason || "-"}</p>
-                                          <pre>{serializeEvidence(event.outcome || {})}</pre>
-                                        </div>
-                                      </details>
-                                    ))}
-                                  </div>
-                                ) : null}
-                              </article>
+                                </td>
+                                <td>
+                                  <Badge text={item.policy_result || "PENDING"} tone={toToneForOutcome(item.policy_result)} />
+                                </td>
+                                <td>
+                                  <p>{item.recommended_action || "NO_ACTION"}</p>
+                                  <p className="row-subtitle">{item.status}</p>
+                                </td>
+                                <td>
+                                  <Badge
+                                    text={item.business_outcome_status || item.latest_verified_outcome || item.latest_attempt_status || "PENDING"}
+                                    tone={toToneForOutcome(item.business_outcome_status || item.latest_verified_outcome || item.latest_attempt_status)}
+                                  />
+                                </td>
+                              </tr>
                             );
                           })}
-                        </div>
-                      )}
-                    </section>
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+
+                  <div className="pagination-row">
+                    <p>{`Page ${opportunityPage} of ${opportunityTotalPages} | ${opportunityTotalCount} opportunities`}</p>
+                    <div>
+                      <label htmlFor="page-size">Rows</label>
+                      <select
+                        id="page-size"
+                        className="select-input compact"
+                        value={String(opportunityPageSize)}
+                        onChange={(event) => {
+                          setOpportunityPage(1);
+                          setOpportunityPageSize(parseNumber(event.target.value, 20));
+                        }}
+                      >
+                        <option value="10">10</option>
+                        <option value="20">20</option>
+                        <option value="40">40</option>
+                        <option value="80">80</option>
+                      </select>
+                      <button
+                        onClick={() => setOpportunityPage((prev) => Math.max(1, prev - 1))}
+                        disabled={!opportunityHasPrev}
+                        className="btn btn-inline"
+                      >
+                        Prev
+                      </button>
+                      <button
+                        onClick={() => setOpportunityPage((prev) => prev + 1)}
+                        disabled={!opportunityHasNext}
+                        className="btn btn-inline"
+                      >
+                        Next
+                      </button>
+                    </div>
                   </div>
-                ) : null}
-              </article>
+                </article>
+              </section>
+            )}
 
-              <article className="panel opportunities-secondary">
-                <h2>Opportunities</h2>
-                <p className="panel-copy">Revenue opportunities ranked for action with policy and outcome context.</p>
+            {activeTab === "Evaluation" && (
+              <section className="panel">
+                <h2>Evaluation</h2>
+                <p className="panel-copy">Baseline vs RecoverIQ for precision, recall, F1, false-positive cost, and revenue recovered.</p>
 
-                <div className="filter-grid">
-                  <div className="field-block search-field">
-                    <label htmlFor="search">Search</label>
-                    <input
-                      id="search"
-                      className="text-input"
-                      value={searchInput}
-                      onChange={(event) => setSearchInput(event.target.value)}
-                      placeholder="customer, reason, action"
-                    />
+                <div className="evaluation-controls">
+                  <div className="field-block">
+                    <label htmlFor="dataset">Dataset version</label>
+                    <input id="dataset" className="text-input" value={runDatasetVersion} onChange={(event) => setRunDatasetVersion(event.target.value)} />
                   </div>
                   <div className="field-block">
-                    <label htmlFor="status">Status</label>
-                    <select id="status" className="select-input" value={statusFilter} onChange={(event) => { setOpportunityPage(1); setStatusFilter(event.target.value); }}>
-                      <option value="ALL">All</option>
-                      <option value="OPEN">OPEN</option>
-                      <option value="RESOLVED">RESOLVED</option>
-                      <option value="CLOSED">CLOSED</option>
+                    <label htmlFor="split">Split</label>
+                    <select id="split" className="select-input" value={runSplit} onChange={(event) => setRunSplit(event.target.value)}>
+                      <option value="TEST">TEST</option>
+                      <option value="VALIDATION">VALIDATION</option>
+                      <option value="DEVELOPMENT">DEVELOPMENT</option>
                     </select>
                   </div>
                   <div className="field-block">
-                    <label htmlFor="action">Recovery Action</label>
-                    <select id="action" className="select-input" value={actionFilter} onChange={(event) => { setOpportunityPage(1); setActionFilter(event.target.value); }}>
-                      <option value="ALL">All</option>
-                      <option value="RETRY">RETRY</option>
-                      <option value="DELAYED_RETRY">DELAYED_RETRY</option>
-                      <option value="RECOVERY_PROMPT">RECOVERY_PROMPT</option>
-                      <option value="ALTERNATE_PAYMENT_PATH">ALTERNATE_PAYMENT_PATH</option>
-                      <option value="ESCALATE">ESCALATE</option>
-                    </select>
+                    <label htmlFor="seed">Generation seed</label>
+                    <input id="seed" className="text-input" value={runGenerationSeed} onChange={(event) => setRunGenerationSeed(event.target.value)} />
                   </div>
-                  <div className="filter-actions">
-                    <button onClick={() => { setOpportunityPage(1); setSearchFilter(searchInput); }} className="btn btn-primary" style={DEFAULT_BUTTON_STYLE}>
-                      Apply
-                    </button>
-                    <button
-                      onClick={() => {
-                        setSearchInput("");
-                        setSearchFilter("");
-                        setStatusFilter("ALL");
-                        setActionFilter("ALL");
-                        setOpportunityPage(1);
-                      }}
-                      className="btn btn-tertiary"
-                      style={DEFAULT_BUTTON_STYLE}
-                    >
-                      Reset
-                    </button>
+                  <div className="field-block">
+                    <label htmlFor="cases">Total cases</label>
+                    <input id="cases" className="text-input" value={runTotalCases} onChange={(event) => setRunTotalCases(event.target.value)} />
                   </div>
+                  <button
+                    onClick={runEvaluation}
+                    disabled={isRunSubmitting}
+                    className="btn btn-primary"
+                  >
+                    {isRunSubmitting ? "Running..." : "Run Evaluation"}
+                  </button>
                 </div>
 
-                {isOpportunityLoading ? <p className="helper-message">Refreshing opportunities...</p> : null}
+                <div className="evaluation-grid">
+                  <article className="evaluation-history">
+                    <h3>Run History</h3>
+                    {evaluationHistory.length === 0 ? (
+                      <p className="helper-message">No evaluation runs available.</p>
+                    ) : (
+                      <div className="run-list">
+                        {evaluationHistory.map((item) => (
+                          <button
+                            key={item.evaluation_run_id}
+                            onClick={() => setSelectedEvaluationRunId(item.evaluation_run_id)}
+                            className={`run-item ${selectedEvaluationRunId === item.evaluation_run_id ? "active" : ""}`}
+                          >
+                            <p>{item.evaluation_run_id}</p>
+                            <span>{`F1 ${formatPercent(item.f1)} | Records ${item.records}`}</span>
+                            <span>{formatIsoTimestamp(item.last_created_at || null)}</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </article>
 
-                {opportunities.length === 0 ? (
-                  <div className="empty-state">
-                    <h3>No opportunities found</h3>
-                    <p>Try a broader filter set or seed the simulation.</p>
-                  </div>
+                  <article className="evaluation-main">
+                    <h3>Baseline vs RecoverIQ</h3>
+                    {isEvaluationLoading ? <p className="helper-message">Loading evaluation insights...</p> : null}
+                    {!isEvaluationLoading && !evaluationComparison ? <p className="helper-message">Select an evaluation run to inspect metrics.</p> : null}
+
+                    {!isEvaluationLoading && evaluationComparison ? (
+                      <>
+                        <div className="metric-compare-grid">
+                          <MetricCompare
+                            label="Precision"
+                            baseline={evaluationComparison.baseline.precision}
+                            recoveriq={evaluationComparison.recoveriq.precision}
+                            baselineLabel={formatPercent(evaluationComparison.baseline.precision)}
+                            recoveriqLabel={formatPercent(evaluationComparison.recoveriq.precision)}
+                          />
+                          <MetricCompare
+                            label="Recall"
+                            baseline={evaluationComparison.baseline.recall}
+                            recoveriq={evaluationComparison.recoveriq.recall}
+                            baselineLabel={formatPercent(evaluationComparison.baseline.recall)}
+                            recoveriqLabel={formatPercent(evaluationComparison.recoveriq.recall)}
+                          />
+                          <MetricCompare
+                            label="F1"
+                            baseline={evaluationComparison.baseline.f1}
+                            recoveriq={evaluationComparison.recoveriq.f1}
+                            baselineLabel={formatPercent(evaluationComparison.baseline.f1)}
+                            recoveriqLabel={formatPercent(evaluationComparison.recoveriq.f1)}
+                          />
+                          <MetricCompare
+                            label="Recovery Rate"
+                            baseline={evaluationComparison.baseline.recovery_rate}
+                            recoveriq={evaluationComparison.recoveriq.recovery_rate}
+                            baselineLabel={formatPercent(evaluationComparison.baseline.recovery_rate)}
+                            recoveriqLabel={formatPercent(evaluationComparison.recoveriq.recovery_rate)}
+                          />
+                          <MetricCompare
+                            label="Revenue Recovered"
+                            baseline={evaluationComparison.baseline.gross_recovered_minor}
+                            recoveriq={evaluationComparison.recoveriq.gross_recovered_minor}
+                            baselineLabel={formatMinorCurrency(evaluationComparison.baseline.gross_recovered_minor)}
+                            recoveriqLabel={formatMinorCurrency(evaluationComparison.recoveriq.gross_recovered_minor)}
+                            max={Math.max(evaluationComparison.baseline.gross_recovered_minor, evaluationComparison.recoveriq.gross_recovered_minor, 1)}
+                          />
+                          <MetricCompare
+                            label="False-positive Cost"
+                            baseline={evaluationComparison.baseline.false_positive_exposure_minor}
+                            recoveriq={evaluationComparison.recoveriq.false_positive_exposure_minor}
+                            baselineLabel={formatMinorCurrency(evaluationComparison.baseline.false_positive_exposure_minor)}
+                            recoveriqLabel={formatMinorCurrency(evaluationComparison.recoveriq.false_positive_exposure_minor)}
+                            max={Math.max(evaluationComparison.baseline.false_positive_exposure_minor, evaluationComparison.recoveriq.false_positive_exposure_minor, 1)}
+                            inverse
+                          />
+                        </div>
+
+                        {evaluationDrilldown ? (
+                          <div className="drilldown-row">
+                            <p>
+                              <strong>Confusion Matrix:</strong> TP {evaluationDrilldown.confusion_matrix.tp} | FP {evaluationDrilldown.confusion_matrix.fp} | FN {evaluationDrilldown.confusion_matrix.fn} | TN {evaluationDrilldown.confusion_matrix.tn}
+                            </p>
+                            <p>
+                              <strong>False-positive Exposure:</strong> {formatMinorCurrency(evaluationDrilldown.false_positive_cost.financial_exposure_minor)}
+                            </p>
+                          </div>
+                        ) : null}
+                      </>
+                    ) : null}
+                  </article>
+                </div>
+              </section>
+            )}
+
+            {activeTab === "Failure Demos" && (
+              <section className="panel">
+                <h2>Failure Scenarios</h2>
+                <p className="panel-copy">Controlled failure scenarios to demonstrate system resilience.</p>
+
+                {failureScenarios.length === 0 ? (
+                  <p className="helper-message">No failure scenarios available.</p>
                 ) : (
-                  <div className="table-wrapper">
-                    <table className="opportunities-table">
+                  <div className="scenarios-table-wrapper">
+                    <table className="scenarios-table">
                       <thead>
                         <tr>
-                          <th>Opportunity</th>
-                          <th>Failure</th>
-                          <th>Amount</th>
-                          <th>Expected Recovery</th>
-                          <th>Confidence</th>
-                          <th>Policy</th>
-                          <th>Recovery Action</th>
-                          <th>Outcome</th>
+                          <th>Scenario</th>
+                          <th>Severity</th>
+                          <th>Action</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {opportunities.map((item) => {
-                          const selected = item.id === selectedOpportunityId;
+                        {failureScenarios.map((scenario) => {
+                          const isExpanded = expandedScenarioId === scenario.scenario_id;
+                          const severityTone = scenario.severity.toUpperCase().includes("HIGH")
+                            ? "bad"
+                            : scenario.severity.toUpperCase().includes("MED")
+                            ? "warn"
+                            : "neutral";
+
                           return (
-                            <tr key={item.id} className={selected ? "selected-row" : ""} onClick={() => setSelectedOpportunityId(item.id)}>
-                              <td>
-                                <p className="row-title">#{item.id}</p>
-                                <p className="row-subtitle">{item.customer_reference || "-"}</p>
-                              </td>
-                              <td>
-                                <p>{item.failure_category || "-"}</p>
-                                <p className="row-subtitle">{item.failure_reason || "-"}</p>
-                              </td>
-                              <td>{formatMinorCurrency(item.amount_at_risk_minor)}</td>
-                              <td>
-                                {formatMinorCurrency(item.expected_recovery_minor)}
-                                <p className="row-subtitle">Net {formatMinorCurrency(item.expected_net_recovery_minor)}</p>
-                              </td>
-                              <td>
-                                <div className="badge-row">
-                                  <Badge text={formatPercent(item.confidence)} tone={toToneForRisk(item.risk_bucket)} />
-                                </div>
-                              </td>
-                              <td>
-                                <Badge text={item.policy_result || "PENDING"} tone={toToneForOutcome(item.policy_result)} />
-                              </td>
-                              <td>
-                                <p>{item.recommended_action || "NO_ACTION"}</p>
-                                <p className="row-subtitle">{item.status}</p>
-                              </td>
-                              <td>
-                                <Badge
-                                  text={item.business_outcome_status || item.latest_verified_outcome || item.latest_attempt_status || "PENDING"}
-                                  tone={toToneForOutcome(item.business_outcome_status || item.latest_verified_outcome || item.latest_attempt_status)}
-                                />
-                              </td>
-                            </tr>
+                            <Fragment key={scenario.scenario_id}>
+                              <tr
+                                className={`scenario-row-header ${isExpanded ? "expanded" : ""}`}
+                                onClick={() => setExpandedScenarioId(isExpanded ? null : scenario.scenario_id)}
+                              >
+                                <td>
+                                  <span className="scenario-expand-arrow">{isExpanded ? "▼" : "▶"}</span>
+                                  <strong>{scenario.title}</strong>
+                                </td>
+                                <td>
+                                  <Badge text={scenario.severity} tone={severityTone} />
+                                </td>
+                                <td>
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      triggerFailureScenario(scenario.scenario_id);
+                                    }}
+                                    className="btn btn-inline"
+                                  >
+                                    Trigger
+                                  </button>
+                                </td>
+                              </tr>
+                              {isExpanded && (
+                                <tr className="scenario-row-detail">
+                                  <td colSpan={3}>
+                                    <div className="scenario-detail-content">
+                                      <p><strong>Description:</strong> {scenario.description}</p>
+                                      <p><strong>Expected Behavior:</strong> {scenario.expected_behavior || scenario.expected_error_code}</p>
+                                      {scenario.actual_behavior && (
+                                        <p><strong>Actual Behavior:</strong> {scenario.actual_behavior}</p>
+                                      )}
+                                    </div>
+                                  </td>
+                                </tr>
+                              )}
+                            </Fragment>
                           );
                         })}
                       </tbody>
                     </table>
                   </div>
                 )}
+                {failureScenarioResult ? <p className="helper-message">{failureScenarioResult}</p> : null}
+              </section>
+            )}
 
-                <div className="pagination-row">
-                  <p>{`Page ${opportunityPage} of ${opportunityTotalPages} | ${opportunityTotalCount} opportunities`}</p>
-                  <div>
-                    <label htmlFor="page-size">Rows</label>
-                    <select
-                      id="page-size"
-                      className="select-input compact"
-                      value={String(opportunityPageSize)}
-                      onChange={(event) => {
-                        setOpportunityPage(1);
-                        setOpportunityPageSize(parseNumber(event.target.value, 20));
-                      }}
-                    >
-                      <option value="10">10</option>
-                      <option value="20">20</option>
-                      <option value="40">40</option>
-                      <option value="80">80</option>
-                    </select>
-                    <button
-                      onClick={() => setOpportunityPage((prev) => Math.max(1, prev - 1))}
-                      disabled={!opportunityHasPrev}
-                      className="btn btn-inline"
-                      style={DEFAULT_BUTTON_STYLE}
-                    >
-                      Prev
-                    </button>
-                    <button
-                      onClick={() => setOpportunityPage((prev) => prev + 1)}
-                      disabled={!opportunityHasNext}
-                      className="btn btn-inline"
-                      style={DEFAULT_BUTTON_STYLE}
-                    >
-                      Next
-                    </button>
-                  </div>
-                </div>
-              </article>
-            </section>
-
-            <section className="panel">
-              <h2>Evaluation</h2>
-              <p className="panel-copy">Baseline vs RecoverIQ for precision, recall, F1, false-positive cost, and revenue recovered.</p>
-
-              <div className="evaluation-controls">
-                <div className="field-block">
-                  <label htmlFor="dataset">Dataset version</label>
-                  <input id="dataset" className="text-input" value={runDatasetVersion} onChange={(event) => setRunDatasetVersion(event.target.value)} />
-                </div>
-                <div className="field-block">
-                  <label htmlFor="split">Split</label>
-                  <select id="split" className="select-input" value={runSplit} onChange={(event) => setRunSplit(event.target.value)}>
-                    <option value="TEST">TEST</option>
-                    <option value="VALIDATION">VALIDATION</option>
-                    <option value="DEVELOPMENT">DEVELOPMENT</option>
-                  </select>
-                </div>
-                <div className="field-block">
-                  <label htmlFor="seed">Generation seed</label>
-                  <input id="seed" className="text-input" value={runGenerationSeed} onChange={(event) => setRunGenerationSeed(event.target.value)} />
-                </div>
-                <div className="field-block">
-                  <label htmlFor="cases">Total cases</label>
-                  <input id="cases" className="text-input" value={runTotalCases} onChange={(event) => setRunTotalCases(event.target.value)} />
-                </div>
-                <button
-                  onClick={runEvaluation}
-                  disabled={isRunSubmitting}
-                  className="btn btn-primary"
-                  style={{ ...DEFAULT_BUTTON_STYLE, opacity: isRunSubmitting ? 0.7 : 1 }}
-                >
-                  {isRunSubmitting ? "Running..." : "Run Evaluation"}
-                </button>
-              </div>
-
-              <div className="evaluation-grid">
-                <article className="evaluation-history">
-                  <h3>Run History</h3>
-                  {evaluationHistory.length === 0 ? (
-                    <p className="helper-message">No evaluation runs available.</p>
-                  ) : (
-                    <div className="run-list">
-                      {evaluationHistory.map((item) => (
-                        <button
-                          key={item.evaluation_run_id}
-                          onClick={() => setSelectedEvaluationRunId(item.evaluation_run_id)}
-                          className={`run-item ${selectedEvaluationRunId === item.evaluation_run_id ? "active" : ""}`}
-                        >
-                          <p>{item.evaluation_run_id}</p>
-                          <span>{`F1 ${formatPercent(item.f1)} | Records ${item.records}`}</span>
-                          <span>{formatIsoTimestamp(item.last_created_at || null)}</span>
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </article>
-
-                <article className="evaluation-main">
-                  <h3>Baseline vs RecoverIQ</h3>
-                  {isEvaluationLoading ? <p className="helper-message">Loading evaluation insights...</p> : null}
-                  {!isEvaluationLoading && !evaluationComparison ? <p className="helper-message">Select an evaluation run to inspect metrics.</p> : null}
-
-                  {!isEvaluationLoading && evaluationComparison ? (
-                    <>
-                      <div className="metric-compare-grid">
-                        <MetricCompare
-                          label="Precision"
-                          baseline={evaluationComparison.baseline.precision}
-                          recoveriq={evaluationComparison.recoveriq.precision}
-                          baselineLabel={formatPercent(evaluationComparison.baseline.precision)}
-                          recoveriqLabel={formatPercent(evaluationComparison.recoveriq.precision)}
-                        />
-                        <MetricCompare
-                          label="Recall"
-                          baseline={evaluationComparison.baseline.recall}
-                          recoveriq={evaluationComparison.recoveriq.recall}
-                          baselineLabel={formatPercent(evaluationComparison.baseline.recall)}
-                          recoveriqLabel={formatPercent(evaluationComparison.recoveriq.recall)}
-                        />
-                        <MetricCompare
-                          label="F1"
-                          baseline={evaluationComparison.baseline.f1}
-                          recoveriq={evaluationComparison.recoveriq.f1}
-                          baselineLabel={formatPercent(evaluationComparison.baseline.f1)}
-                          recoveriqLabel={formatPercent(evaluationComparison.recoveriq.f1)}
-                        />
-                        <MetricCompare
-                          label="Recovery Rate"
-                          baseline={evaluationComparison.baseline.recovery_rate}
-                          recoveriq={evaluationComparison.recoveriq.recovery_rate}
-                          baselineLabel={formatPercent(evaluationComparison.baseline.recovery_rate)}
-                          recoveriqLabel={formatPercent(evaluationComparison.recoveriq.recovery_rate)}
-                        />
-                        <MetricCompare
-                          label="Revenue Recovered"
-                          baseline={evaluationComparison.baseline.gross_recovered_minor}
-                          recoveriq={evaluationComparison.recoveriq.gross_recovered_minor}
-                          baselineLabel={formatMinorCurrency(evaluationComparison.baseline.gross_recovered_minor)}
-                          recoveriqLabel={formatMinorCurrency(evaluationComparison.recoveriq.gross_recovered_minor)}
-                          max={Math.max(evaluationComparison.baseline.gross_recovered_minor, evaluationComparison.recoveriq.gross_recovered_minor, 1)}
-                        />
-                        <MetricCompare
-                          label="False-positive Cost"
-                          baseline={evaluationComparison.baseline.false_positive_exposure_minor}
-                          recoveriq={evaluationComparison.recoveriq.false_positive_exposure_minor}
-                          baselineLabel={formatMinorCurrency(evaluationComparison.baseline.false_positive_exposure_minor)}
-                          recoveriqLabel={formatMinorCurrency(evaluationComparison.recoveriq.false_positive_exposure_minor)}
-                          max={Math.max(evaluationComparison.baseline.false_positive_exposure_minor, evaluationComparison.recoveriq.false_positive_exposure_minor, 1)}
-                          inverse
-                        />
-                      </div>
-
-                      {evaluationDrilldown ? (
-                        <div className="drilldown-row">
-                          <p>
-                            <strong>Confusion Matrix:</strong> TP {evaluationDrilldown.confusion_matrix.tp} | FP {evaluationDrilldown.confusion_matrix.fp} | FN {evaluationDrilldown.confusion_matrix.fn} | TN {evaluationDrilldown.confusion_matrix.tn}
-                          </p>
-                          <p>
-                            <strong>False-positive Exposure:</strong> {formatMinorCurrency(evaluationDrilldown.false_positive_cost.financial_exposure_minor)}
-                          </p>
-                        </div>
-                      ) : null}
-                    </>
-                  ) : null}
-                </article>
-              </div>
-            </section>
-
-            <section className="panel secondary-panel">
-              <h2>Reliability & Security</h2>
-              <p className="panel-copy">Controlled failure scenarios and readiness checks for safe operation.</p>
-
-              <div className="reliability-grid">
-                <article>
-                  <h3>Failure Scenarios</h3>
-                  {failureScenarios.length === 0 ? (
-                    <p className="helper-message">No failure scenarios available.</p>
-                  ) : (
-                    <div className="scenario-list">
-                      {failureScenarios.map((scenario) => (
-                        <div key={scenario.scenario_id} className="scenario-item">
-                          <div>
-                            <p className="row-title">{scenario.title}</p>
-                            <p className="row-subtitle">{scenario.description}</p>
-                            <p className="row-subtitle">Expected: {scenario.expected_behavior || scenario.expected_error_code}</p>
-                          </div>
-                          <button onClick={() => triggerFailureScenario(scenario.scenario_id)} className="btn btn-inline" style={DEFAULT_BUTTON_STYLE}>
-                            Trigger
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                  {failureScenarioResult ? <p className="helper-message">{failureScenarioResult}</p> : null}
-                </article>
-
-                <article>
-                  <h3>Readiness</h3>
+            {activeTab === "Readiness" && (
+              <section className="panel">
+                <h2>Readiness</h2>
+                <p className="panel-copy">Controlled validation checks for safe operating status.</p>
+                <div style={{ marginTop: "16px" }}>
                   <button
                     onClick={executeReadinessValidation}
                     disabled={isReadinessRunning}
                     className="btn btn-primary"
-                    style={{ ...DEFAULT_BUTTON_STYLE, opacity: isReadinessRunning ? 0.7 : 1 }}
                   >
                     {isReadinessRunning ? "Running workflow..." : "Run Readiness Workflow"}
                   </button>
 
                   {readinessValidation ? (
-                    <div className="readiness-list">
+                    <div className="readiness-list" style={{ marginTop: "16px" }}>
                       <div className="badge-row">
                         <Badge
                           text={readinessValidation.status}
@@ -1495,12 +1446,209 @@ export function App() {
                       ))}
                     </div>
                   ) : null}
-                </article>
-              </div>
-            </section>
+                </div>
+              </section>
+            )}
           </>
-        ) : null}
+        )}
       </section>
+
+      {/* Right-side Slide-over Detail Drawer & Backdrop */}
+      <div
+        className={`drawer-backdrop ${selectedOpportunityId !== null ? "open" : ""}`}
+        onClick={() => setSelectedOpportunityId(null)}
+      />
+      <aside className={`drawer-container ${selectedOpportunityId !== null ? "open" : ""}`}>
+        {selectedItem && (
+          <>
+            <header className="drawer-header">
+              <div>
+                <h2>Opportunity Detail</h2>
+                <p className="panel-copy">
+                  #{selectedItem.id} &bull; {selectedItem.customer_reference || "No Reference"}
+                </p>
+              </div>
+              <button
+                className="drawer-close-btn"
+                onClick={() => setSelectedOpportunityId(null)}
+                aria-label="Close details"
+              >
+                &times;
+              </button>
+            </header>
+            <div className="drawer-body">
+              {isDetailLoading ? (
+                <div className="drawer-loading">
+                  <div className="spinner" />
+                  <p>Loading opportunity details...</p>
+                </div>
+              ) : detail ? (
+                <div className="detail-layout">
+                  <section className="journey-panel">
+                    <h3>Recovery Timeline</h3>
+                    <div className="journey-track" aria-label="Recovery timeline">
+                      {JOURNEY_STAGES.map((stage, index) => {
+                        const reached = journeyState?.reached[index] || false;
+                        const active = (journeyState?.activeIndex || 0) === index;
+                        return (
+                          <div key={stage} className={`journey-stage ${reached ? "reached" : ""} ${active ? "active" : ""}`}>
+                            <span>{stage}</span>
+                            {index < JOURNEY_STAGES.length - 1 ? <span className="journey-arrow">↓</span> : null}
+                          </div>
+                        );
+                      })}
+                    </div>
+                    <p className="helper-message">
+                      Current state: <strong>{toTitle(detail.recovery_state.current || "pending")}</strong>
+                    </p>
+                  </section>
+
+                  <div className="comparison-container">
+                    <article className="info-card comparison-card ai-card">
+                      <h3>AI Explanation</h3>
+                      <p><strong>Diagnosis:</strong> {detail.evidence.diagnosis || "-"}</p>
+                      <p><strong>Evidence:</strong> {detail.evidence.decision_source || "Model signal unavailable"}</p>
+                      <p><strong>Confidence:</strong> {formatPercent(detail.opportunity.confidence)}</p>
+                      <p><strong>Recommended Action:</strong> {detail.action_traceability.recommended_action || "-"}</p>
+                    </article>
+
+                    <div className="vs-divider">
+                      <span>VS</span>
+                    </div>
+
+                    <article className="info-card comparison-card policy-card">
+                      <h3>Deterministic Policy</h3>
+                      <p className={`policy-decision ${policyDecision === "ALLOW" ? "allow" : policyDecision === "BLOCK" ? "block" : "pending"}`}>
+                        POLICY: {policyDecision}
+                      </p>
+                      <div className="check-grid">
+                        {Object.entries(detail.policy_checks.checks).map(([key, passed]) => (
+                          <div key={key} className="check-item">
+                            <span>{getPolicyCheckLabel(key)}</span>
+                            <span className={passed ? "check-pass" : "check-fail"}>{passed ? "✓" : "✕"}</span>
+                          </div>
+                        ))}
+                        {Object.keys(detail.policy_checks.checks).length === 0 ? <p className="helper-message">No policy checks reported.</p> : null}
+                      </div>
+                      <p className="helper-message">Execution is authorized by policy controls, not by AI recommendation.</p>
+                    </article>
+                  </div>
+
+                  <section className="insight-grid">
+                    <article className="info-card">
+                      <h3>Razorpay Payment Link</h3>
+                      {latestAttemptWithLink?.payment_link ? (
+                        <>
+                          <p><strong>Payment Link ID:</strong> {latestAttemptWithLink.payment_link.payment_link_id}</p>
+                          <p><strong>Status:</strong> {latestAttemptWithLink.payment_link.status}</p>
+                          <p><strong>Reference:</strong> {latestAttemptWithLink.payment_link.payment_link_reference_id}</p>
+                          {paymentLinkUrl ? (
+                            <a href={paymentLinkUrl} target="_blank" rel="noreferrer" className="pay-link">
+                              Open Payment Link
+                            </a>
+                          ) : (
+                            <p className="helper-message">Payment link URL is not exposed by this detail payload.</p>
+                          )}
+                        </>
+                      ) : (
+                        <p className="helper-message">No Razorpay payment link created for the selected opportunity yet.</p>
+                      )}
+                    </article>
+
+                    <article className="info-card">
+                      <h3>Outcome</h3>
+                      <p><strong>Outcome Status:</strong> {detail.semantic_states?.business_outcome || detail.action_traceability.latest_verified_outcome || "NOT_RECOVERED"}</p>
+                      <p><strong>Recovered Revenue:</strong> {formatMinorCurrency(detail.economics.gross_recovered_minor)}</p>
+                      <p><strong>Net Recovered:</strong> {formatMinorCurrency(detail.economics.net_recovered_minor)}</p>
+                      <p><strong>Attempts:</strong> {detail.action_traceability.attempt_count}</p>
+                    </article>
+                  </section>
+
+                  <section className="audit-panel">
+                    <h3>Audit Timeline</h3>
+                    {detail.timeline_groups.length === 0 ? (
+                      <p className="helper-message">No audit events available.</p>
+                    ) : (
+                      <div className="audit-group-list">
+                        {detail.timeline_groups.map((group) => {
+                          const isCollapsed = timelineCollapsed[group.group] || false;
+                          return (
+                            <article key={group.group} id={`audit-group-${group.group.replace(/\s+/g, "-")}`} className="audit-group">
+                              <header>
+                                <div>
+                                  <strong>{group.group}</strong>
+                                  <div className="badge-row">
+                                    <Badge text={`PASS ${group.counts.pass}`} tone="good" />
+                                    <Badge text={`FAIL ${group.counts.fail}`} tone="bad" />
+                                    <Badge text={`PENDING ${group.counts.pending}`} tone="warn" />
+                                  </div>
+                                </div>
+                                <button
+                                  onClick={() => {
+                                    const willBeCollapsed = !isCollapsed;
+                                    setTimelineCollapsed((prev) => ({ ...prev, [group.group]: willBeCollapsed }));
+                                    if (!willBeCollapsed) {
+                                      setTimeout(() => {
+                                        const id = `audit-group-${group.group.replace(/\s+/g, "-")}`;
+                                        const element = document.getElementById(id);
+                                        if (element) {
+                                          element.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                                        }
+                                      }, 50);
+                                    }
+                                  }}
+                                  className="btn btn-inline"
+                                >
+                                  {isCollapsed ? "Expand" : "Collapse"}
+                                </button>
+                              </header>
+                              {!isCollapsed ? (
+                                <div className="audit-event-list">
+                                  {group.events.map((event, index) => (
+                                    <details
+                                      key={`${group.group}-${index}`}
+                                      className="audit-event"
+                                      onToggle={(e) => {
+                                        if (e.currentTarget.open) {
+                                          const target = e.currentTarget;
+                                          setTimeout(() => {
+                                            target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                                          }, 50);
+                                        }
+                                      }}
+                                    >
+                                      <summary>
+                                        <Badge
+                                          text={event.outcome_status.toUpperCase()}
+                                          tone={event.outcome_status === "pass" ? "good" : event.outcome_status === "fail" ? "bad" : "warn"}
+                                        />
+                                        <span>{event.event_type}</span>
+                                        <span>{formatIsoTimestamp(event.timestamp)}</span>
+                                      </summary>
+                                      <div>
+                                        <p><strong>Actor:</strong> {event.actor_type}</p>
+                                        <p><strong>Stage:</strong> {event.stage || "-"}</p>
+                                        <p><strong>Reason:</strong> {event.reason || "-"}</p>
+                                        <pre>{serializeEvidence(event.outcome || {})}</pre>
+                                      </div>
+                                    </details>
+                                  ))}
+                                </div>
+                              ) : null}
+                            </article>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </section>
+                </div>
+              ) : (
+                <p className="helper-message">Select an opportunity to view its recovery journey and audit trace.</p>
+              )}
+            </div>
+          </>
+        )}
+      </aside>
     </main>
   );
 }
