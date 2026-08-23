@@ -164,13 +164,6 @@ type OpportunityDetail = {
       outcome: Record<string, unknown> | null;
     }>;
   }>;
-  audit_trail: Array<{
-    timestamp: string | null;
-    event_type: string;
-    stage: string | null;
-    outcome_status: "pass" | "fail" | "pending";
-    reason: string | null;
-  }>;
 };
 
 type RazorpayStatusResponse = {
@@ -216,9 +209,6 @@ type OpportunityListResponse = {
     total_pages: number;
     has_next: boolean;
     has_prev: boolean;
-    pagination_mode?: "page" | "cursor";
-    cursor?: string | null;
-    next_cursor?: string | null;
   };
   error?: { code?: string; message?: string };
 };
@@ -371,12 +361,29 @@ type ReadinessValidationResponse = {
   error?: { code?: string; message?: string };
 };
 
-const buttonStyle: CSSProperties = {
-  background: "#0f172a",
-  color: "#ffffff",
+type Tone = "good" | "warn" | "bad" | "neutral";
+
+type HealthItem = {
+  label: string;
+  healthy: boolean;
+  note: string;
+};
+
+const JOURNEY_STAGES = [
+  "FAILED PAYMENT",
+  "REVENUE AT RISK",
+  "AI DIAGNOSIS",
+  "POLICY DECISION",
+  "RECOVERY ACTION",
+  "PAYMENT",
+  "VERIFICATION",
+  "RECOVERED",
+] as const;
+
+const DEFAULT_BUTTON_STYLE: CSSProperties = {
   border: "1px solid transparent",
-  borderRadius: 9,
-  padding: "9px 13px",
+  borderRadius: 10,
+  padding: "9px 14px",
   cursor: "pointer",
   fontWeight: 600,
 };
@@ -399,74 +406,62 @@ function formatIsoTimestamp(input: string | null): string {
   }
   const value = new Date(input);
   if (Number.isNaN(value.getTime())) {
-    return "-";
+    return input;
   }
-  return value.toLocaleString("en-IN", {
-    day: "2-digit",
-    month: "short",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+  return value.toLocaleString();
 }
 
-function formatPercentValue(value: number): string {
-  if (!Number.isFinite(value)) {
-    return "0.0%";
-  }
-  return `${value.toFixed(1)}%`;
-}
-
-function toDeltaClass(delta: number): string {
-  return delta >= 0 ? "delta-positive" : "delta-negative";
-}
-
-function toDeltaLabel(delta: number): string {
-  return `${delta >= 0 ? "+" : ""}${delta.toFixed(1)}%`;
-}
-
-function toRiskTone(bucket: string): "high" | "medium" | "low" | "neutral" {
-  const normalized = bucket.toUpperCase();
-  if (normalized === "HIGH") return "high";
-  if (normalized === "MEDIUM") return "medium";
-  if (normalized === "LOW") return "low";
-  return "neutral";
-}
-
-function toPolicyTone(value: string | null): "pass" | "fail" | "pending" {
-  const normalized = (value || "").toUpperCase();
-  if (normalized.includes("ALLOW") || normalized.includes("APPROV")) return "pass";
-  if (normalized.includes("BLOCK") || normalized.includes("FAIL")) return "fail";
-  return "pending";
-}
-
-function toOutcomeTone(value: string | null): "pass" | "fail" | "pending" {
-  const normalized = (value || "").toUpperCase();
-  if (["SUCCESS", "RECOVERED", "CAPTURED", "PASS"].some((item) => normalized.includes(item))) return "pass";
-  if (["FAILED", "FAIL", "BLOCKED", "CANCELLED"].some((item) => normalized.includes(item))) return "fail";
-  return "pending";
-}
-
-function serializeEvidence(value: unknown): string {
-  try {
-    return JSON.stringify(value);
-  } catch {
-    return "{}";
-  }
-}
-
-function formatReasonCodes(codes: string[], limit = 3): string {
-  if (codes.length === 0) {
-    return "-";
-  }
-  if (codes.length <= limit) {
-    return codes.join(", ");
-  }
-  return `${codes.slice(0, limit).join(", ")} +${codes.length - limit} more`;
+function toTitle(value: string): string {
+  return value
+    .replace(/_/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/\w\S*/g, (word) => `${word.charAt(0).toUpperCase()}${word.slice(1).toLowerCase()}`);
 }
 
 function parseNumber(input: string, fallback: number): number {
   const parsed = Number.parseInt(input, 10);
   return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function toToneForOutcome(value: string | null): Tone {
+  const normalized = (value || "").toUpperCase();
+  if (["SUCCESS", "RECOVERED", "CAPTURED", "PASS"].some((item) => normalized.includes(item))) {
+    return "good";
+  }
+  if (["FAILED", "FAIL", "BLOCK", "CANCEL"].some((item) => normalized.includes(item))) {
+    return "bad";
+  }
+  if (normalized.length > 0) {
+    return "warn";
+  }
+  return "neutral";
+}
+
+function toToneForRisk(value: string): Tone {
+  const normalized = value.toUpperCase();
+  if (normalized.includes("HIGH")) {
+    return "bad";
+  }
+  if (normalized.includes("MED")) {
+    return "warn";
+  }
+  if (normalized.includes("LOW")) {
+    return "good";
+  }
+  return "neutral";
+}
+
+function isLikelyUrl(value: string): boolean {
+  return /^https?:\/\//i.test(value);
+}
+
+function serializeEvidence(value: unknown): string {
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch {
+    return "{}";
+  }
 }
 
 function isEmptySummary(summary: Summary): boolean {
@@ -478,6 +473,83 @@ function isEmptySummary(summary: Summary): boolean {
   );
 }
 
+function normalizeKey(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, "");
+}
+
+function getPolicyCheckLabel(key: string): string {
+  const normalized = normalizeKey(key);
+  if (normalized.includes("testmode")) return "Test Mode";
+  if (normalized.includes("amount")) return "Amount";
+  if (normalized.includes("confidence")) return "Confidence";
+  if (normalized.includes("expected") && normalized.includes("recover")) return "Expected Recovery";
+  if (normalized.includes("retry") && normalized.includes("limit")) return "Retry Limit";
+  if (normalized.includes("duplicate")) return "Duplicate Check";
+  return toTitle(key);
+}
+
+function getPolicyDecision(detail: OpportunityDetail): "ALLOW" | "BLOCK" | "PENDING" {
+  const result = (detail.policy_checks.result || "").toUpperCase();
+  if (result.includes("ALLOW") || result.includes("APPROV")) {
+    return "ALLOW";
+  }
+  if (result.includes("BLOCK") || result.includes("FAIL")) {
+    return "BLOCK";
+  }
+  return "PENDING";
+}
+
+function inferJourneyStates(detail: OpportunityDetail): { reached: boolean[]; activeIndex: number } {
+  const semantic = detail.semantic_states;
+  const reached: boolean[] = [
+    Boolean(detail.payment?.status?.toUpperCase().includes("FAIL") || semantic?.original_payment),
+    detail.opportunity.amount_at_risk_minor > 0,
+    Boolean(detail.evidence.diagnosis || detail.evidence.provider),
+    Boolean(detail.policy_checks.result),
+    detail.attempts.length > 0 || Boolean(detail.action_traceability.recommended_action),
+    Boolean(detail.semantic_states?.recovery_payment || detail.payment?.razorpay_payment_id || detail.attempts.length > 0),
+    Boolean(detail.semantic_states?.verification || detail.action_traceability.latest_verified_outcome),
+    Boolean((detail.semantic_states?.business_outcome || detail.action_traceability.latest_verified_outcome || "").toUpperCase().includes("RECOVER")),
+  ];
+
+  const current = normalizeKey(detail.recovery_state.current);
+  const stageLookup: Record<string, number> = {
+    failedpayment: 0,
+    revenueatrisk: 1,
+    aidediagnosis: 2,
+    aidiagnosis: 2,
+    policydecision: 3,
+    recoveryaction: 4,
+    payment: 5,
+    verification: 6,
+    recovered: 7,
+  };
+
+  let activeIndex = stageLookup[current] ?? -1;
+  if (activeIndex < 0) {
+    activeIndex = reached.reduce((last, value, index) => (value ? index : last), 0);
+  }
+  return { reached, activeIndex };
+}
+
+function extractPaymentLinkUrl(detail: OpportunityDetail, razorpayStatus: RazorpayStatusResponse["data"] | null): string | null {
+  if (detail.timeline.length > 0) {
+    for (const event of detail.timeline) {
+      if (!event.outcome) {
+        continue;
+      }
+      for (const value of Object.values(event.outcome)) {
+        if (typeof value === "string" && isLikelyUrl(value)) {
+          return value;
+        }
+      }
+    }
+  }
+
+  const fallbackUrl = razorpayStatus?.last_successful_razorpay_operation?.short_url || null;
+  return fallbackUrl && isLikelyUrl(fallbackUrl) ? fallbackUrl : null;
+}
+
 export function App() {
   const [summary, setSummary] = useState<Summary | null>(null);
   const [opportunities, setOpportunities] = useState<OpportunityListItem[]>([]);
@@ -486,22 +558,14 @@ export function App() {
 
   const [statusFilter, setStatusFilter] = useState<string>("ALL");
   const [actionFilter, setActionFilter] = useState<string>("ALL");
-  const [riskBucketFilter, setRiskBucketFilter] = useState<string>("ALL");
-  const [sortBy, setSortBy] = useState<string>("updated_desc");
   const [searchInput, setSearchInput] = useState<string>("");
   const [searchFilter, setSearchFilter] = useState<string>("");
-  const [opportunityPaginationMode, setOpportunityPaginationMode] = useState<"page" | "cursor">("page");
   const [opportunityPage, setOpportunityPage] = useState<number>(1);
   const [opportunityPageSize, setOpportunityPageSize] = useState<number>(20);
   const [opportunityTotalCount, setOpportunityTotalCount] = useState<number>(0);
   const [opportunityTotalPages, setOpportunityTotalPages] = useState<number>(1);
   const [opportunityHasNext, setOpportunityHasNext] = useState<boolean>(false);
   const [opportunityHasPrev, setOpportunityHasPrev] = useState<boolean>(false);
-  const [opportunityCursor, setOpportunityCursor] = useState<string | null>(null);
-  const [opportunityNextCursor, setOpportunityNextCursor] = useState<string | null>(null);
-  const [opportunityCursorHistory, setOpportunityCursorHistory] = useState<string[]>([]);
-  const [cursorHelperMessage, setCursorHelperMessage] = useState<string>("");
-  const [timelineCollapsedByOpportunity, setTimelineCollapsedByOpportunity] = useState<Record<number, Record<string, boolean>>>({});
 
   const [evaluationHistory, setEvaluationHistory] = useState<EvaluationSummary[]>([]);
   const [selectedEvaluationRunId, setSelectedEvaluationRunId] = useState<string | null>(null);
@@ -509,15 +573,18 @@ export function App() {
   const [evaluationDrilldown, setEvaluationDrilldown] = useState<EvaluationDrilldownResponse["data"] | null>(null);
   const [isEvaluationLoading, setIsEvaluationLoading] = useState<boolean>(false);
   const [isRunSubmitting, setIsRunSubmitting] = useState<boolean>(false);
-  const [runDatasetVersion, setRunDatasetVersion] = useState<string>("phase11_dataset");
+  const [runDatasetVersion, setRunDatasetVersion] = useState<string>("default_dataset");
   const [runSplit, setRunSplit] = useState<string>("TEST");
   const [runGenerationSeed, setRunGenerationSeed] = useState<string>("42");
   const [runTotalCases, setRunTotalCases] = useState<string>("1000");
+
   const [failureScenarios, setFailureScenarios] = useState<FailureScenario[]>([]);
   const [failureScenarioResult, setFailureScenarioResult] = useState<string>("");
   const [readinessValidation, setReadinessValidation] = useState<ReadinessValidationResponse["data"] | null>(null);
   const [isReadinessRunning, setIsReadinessRunning] = useState<boolean>(false);
   const [razorpayStatus, setRazorpayStatus] = useState<RazorpayStatusResponse["data"] | null>(null);
+  const [timelineCollapsed, setTimelineCollapsed] = useState<Record<string, boolean>>({});
+
   const [demoMutationMessage, setDemoMutationMessage] = useState<string>("");
   const [isDemoMutating, setIsDemoMutating] = useState<boolean>(false);
 
@@ -526,16 +593,6 @@ export function App() {
   const [isOpportunityLoading, setIsOpportunityLoading] = useState<boolean>(false);
   const [isDetailLoading, setIsDetailLoading] = useState<boolean>(false);
   const [autoRefreshEnabled, setAutoRefreshEnabled] = useState<boolean>(false);
-  const [viewportWidth, setViewportWidth] = useState<number>(window.innerWidth);
-
-  useEffect(() => {
-    const onResize = () => setViewportWidth(window.innerWidth);
-    window.addEventListener("resize", onResize);
-    return () => window.removeEventListener("resize", onResize);
-  }, []);
-
-  const isTabletOrLower = viewportWidth < 1024;
-  const isMobile = viewportWidth < 768;
 
   const loadSummary = async () => {
     const response = await fetch("/api/v1/dashboard/summary");
@@ -555,42 +612,21 @@ export function App() {
     setRazorpayStatus(payload.data);
   };
 
-  const runDemoMutation = async (endpoint: "/api/v1/demo/reset-core-recovery" | "/api/v1/demo/seed-core-recovery") => {
-    setIsDemoMutating(true);
-    setDemoMutationMessage("");
-    try {
-      const response = await fetch(endpoint, { method: "POST" });
-      const payload = (await response.json()) as { success?: boolean; error?: { message?: string } };
-      if (!response.ok || !payload.success) {
-        throw new Error(payload.error?.message || "Demo operation failed.");
-      }
-      setDemoMutationMessage(endpoint.includes("reset") ? "Demo reset complete." : "Demo seed complete.");
-      await loadCommandCenter();
-    } finally {
-      setIsDemoMutating(false);
-    }
-  };
-
   const loadOpportunities = async (showLoader: boolean) => {
     if (showLoader) {
       setIsOpportunityLoading(true);
     }
+
     const query = new URLSearchParams();
-    query.set("pagination_mode", opportunityPaginationMode);
+    query.set("pagination_mode", "page");
     query.set("page", String(opportunityPage));
     query.set("page_size", String(opportunityPageSize));
-    query.set("sort_by", sortBy);
-    if (opportunityPaginationMode === "cursor" && opportunityCursor) {
-      query.set("cursor", opportunityCursor);
-    }
+    query.set("sort_by", "updated_desc");
     if (statusFilter !== "ALL") {
       query.set("status", statusFilter);
     }
     if (actionFilter !== "ALL") {
       query.set("action", actionFilter);
-    }
-    if (riskBucketFilter !== "ALL") {
-      query.set("risk_bucket", riskBucketFilter.toLowerCase());
     }
     if (searchFilter.trim().length > 0) {
       query.set("search", searchFilter.trim());
@@ -610,11 +646,10 @@ export function App() {
     setOpportunityTotalPages(payload.data.total_pages);
     setOpportunityHasNext(payload.data.has_next);
     setOpportunityHasPrev(payload.data.has_prev);
-    setOpportunityNextCursor(payload.data.next_cursor || null);
+
     if (payload.data.items.length === 0) {
       setSelectedOpportunityId(null);
       setDetail(null);
-      setOpportunityNextCursor(null);
       if (showLoader) {
         setIsOpportunityLoading(false);
       }
@@ -628,6 +663,85 @@ export function App() {
 
     if (showLoader) {
       setIsOpportunityLoading(false);
+    }
+  };
+
+  const loadOpportunityDetail = async (opportunityId: number) => {
+    setIsDetailLoading(true);
+    try {
+      const response = await fetch(`/api/v1/opportunities/${opportunityId}`);
+      const payload = (await response.json()) as OpportunityDetailResponse;
+      if (!response.ok || !payload.success || !payload.data) {
+        throw new Error(payload.error?.message || "Unable to load opportunity detail.");
+      }
+      setDetail(payload.data);
+      setTimelineCollapsed({});
+    } finally {
+      setIsDetailLoading(false);
+    }
+  };
+
+  const loadEvaluationHistory = async () => {
+    const response = await fetch("/api/v1/evaluation/history?limit=10");
+    const payload = (await response.json()) as EvaluationHistoryResponse;
+    if (!response.ok || !payload.success || !payload.data) {
+      throw new Error(payload.error?.message || "Unable to load evaluation history.");
+    }
+    setEvaluationHistory(payload.data.items);
+    if (payload.data.items.length > 0 && !selectedEvaluationRunId) {
+      setSelectedEvaluationRunId(payload.data.items[0].evaluation_run_id);
+    }
+  };
+
+  const loadEvaluationRunInsights = async (runId: string) => {
+    setIsEvaluationLoading(true);
+    try {
+      const [comparisonResponse, drilldownResponse] = await Promise.all([
+        fetch(`/api/v1/evaluation/${runId}/comparison`),
+        fetch(`/api/v1/evaluation/${runId}/drilldown`),
+      ]);
+
+      const comparisonPayload = (await comparisonResponse.json()) as EvaluationComparisonResponse;
+      const drilldownPayload = (await drilldownResponse.json()) as EvaluationDrilldownResponse;
+
+      if (!comparisonResponse.ok || !comparisonPayload.success || !comparisonPayload.data) {
+        throw new Error(comparisonPayload.error?.message || "Unable to load evaluation comparison.");
+      }
+      if (!drilldownResponse.ok || !drilldownPayload.success || !drilldownPayload.data) {
+        throw new Error(drilldownPayload.error?.message || "Unable to load evaluation drilldown.");
+      }
+
+      setEvaluationComparison(comparisonPayload.data);
+      setEvaluationDrilldown(drilldownPayload.data);
+    } finally {
+      setIsEvaluationLoading(false);
+    }
+  };
+
+  const runEvaluation = async () => {
+    setIsRunSubmitting(true);
+    try {
+      const response = await fetch("/api/v1/evaluation/run", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          dataset_version: runDatasetVersion,
+          split: runSplit,
+          generation_seed: parseNumber(runGenerationSeed, 42),
+          total_cases: parseNumber(runTotalCases, 1000),
+          generate_if_missing: true,
+        }),
+      });
+      const payload = (await response.json()) as EvaluationRunResponse;
+      if (!response.ok || !payload.success || !payload.data) {
+        throw new Error(payload.error?.message || "Unable to run evaluation.");
+      }
+      const runId = payload.data.evaluation_run_id;
+      setSelectedEvaluationRunId(runId);
+      await loadEvaluationHistory();
+      await loadEvaluationRunInsights(runId);
+    } finally {
+      setIsRunSubmitting(false);
     }
   };
 
@@ -670,174 +784,33 @@ export function App() {
     }
   };
 
-  const resetCursorPagination = () => {
-    setOpportunityCursor(null);
-    setOpportunityNextCursor(null);
-    setOpportunityCursorHistory([]);
-    setOpportunityPage(1);
-    setCursorHelperMessage("");
-  };
-
-  const buildCursorShareUrl = (cursorToken: string | null): string => {
-    const params = new URLSearchParams();
-    params.set("pagination_mode", "cursor");
-    params.set("page_size", String(opportunityPageSize));
-    params.set("sort_by", sortBy);
-    if (statusFilter !== "ALL") {
-      params.set("status", statusFilter);
-    }
-    if (actionFilter !== "ALL") {
-      params.set("action", actionFilter);
-    }
-    if (riskBucketFilter !== "ALL") {
-      params.set("risk_bucket", riskBucketFilter.toLowerCase());
-    }
-    if (searchFilter.trim().length > 0) {
-      params.set("search", searchFilter.trim());
-    }
-    if (cursorToken) {
-      params.set("cursor", cursorToken);
-    }
-    return `${window.location.origin}${window.location.pathname}?${params.toString()}`;
-  };
-
-  const copyTextToClipboard = async (value: string) => {
-    if (navigator.clipboard?.writeText) {
-      await navigator.clipboard.writeText(value);
-      return;
-    }
-
-    const textArea = document.createElement("textarea");
-    textArea.value = value;
-    textArea.style.position = "fixed";
-    textArea.style.opacity = "0";
-    document.body.appendChild(textArea);
-    textArea.focus();
-    textArea.select();
-    document.execCommand("copy");
-    document.body.removeChild(textArea);
-  };
-
-  const handleCopyCursorToken = async () => {
-    const token = opportunityCursor || opportunityNextCursor;
-    if (!token) {
-      setCursorHelperMessage("No cursor token available for this page.");
-      return;
-    }
-
+  const runDemoMutation = async (endpoint: "/api/v1/demo/reset-core-recovery" | "/api/v1/demo/seed-core-recovery") => {
+    setIsDemoMutating(true);
+    setDemoMutationMessage("");
     try {
-      await copyTextToClipboard(token);
-      setCursorHelperMessage("Cursor token copied.");
-    } catch {
-      setCursorHelperMessage("Unable to copy cursor token in this browser.");
-    }
-  };
-
-  const handleShareCursorLink = async () => {
-    const shareUrl = buildCursorShareUrl(opportunityCursor);
-    try {
-      if (navigator.share) {
-        await navigator.share({ title: "RecoverIQ Cursor Session", url: shareUrl });
-        setCursorHelperMessage("Cursor session link shared.");
-        return;
+      const response = await fetch(endpoint, { method: "POST" });
+      const payload = (await response.json()) as { success?: boolean; error?: { message?: string } };
+      if (!response.ok || !payload.success) {
+        throw new Error(payload.error?.message || "Demo operation failed.");
       }
-
-      await copyTextToClipboard(shareUrl);
-      setCursorHelperMessage("Cursor session link copied.");
-    } catch {
-      setCursorHelperMessage("Unable to share cursor link in this browser.");
-    }
-  };
-
-  const loadOpportunityDetail = async (opportunityId: number) => {
-    setIsDetailLoading(true);
-    try {
-      const response = await fetch(`/api/v1/opportunities/${opportunityId}`);
-      const payload = (await response.json()) as OpportunityDetailResponse;
-      if (!response.ok || !payload.success || !payload.data) {
-        throw new Error(payload.error?.message || "Unable to load opportunity detail.");
-      }
-      setDetail(payload.data);
+      setDemoMutationMessage(endpoint.includes("reset") ? "Simulation reset complete." : "Simulation seed complete.");
+      await loadCommandCenter();
     } finally {
-      setIsDetailLoading(false);
+      setIsDemoMutating(false);
     }
   };
 
-  const loadEvaluationHistory = async () => {
-    const response = await fetch("/api/v1/evaluation/history?limit=10");
-    const payload = (await response.json()) as EvaluationHistoryResponse;
-    if (!response.ok || !payload.success || !payload.data) {
-      throw new Error(payload.error?.message || "Unable to load evaluation history.");
-    }
-    setEvaluationHistory(payload.data.items);
-    if (payload.data.items.length > 0 && !selectedEvaluationRunId) {
-      setSelectedEvaluationRunId(payload.data.items[0].evaluation_run_id);
-    }
-  };
-
-  const loadEvaluationRunInsights = async (runId: string) => {
-    setIsEvaluationLoading(true);
-    try {
-      const [comparisonResponse, drilldownResponse] = await Promise.all([
-        fetch(`/api/v1/evaluation/${runId}/comparison`),
-        fetch(`/api/v1/evaluation/${runId}/drilldown`),
-      ]);
-      const comparisonPayload = (await comparisonResponse.json()) as EvaluationComparisonResponse;
-      const drilldownPayload = (await drilldownResponse.json()) as EvaluationDrilldownResponse;
-
-      if (!comparisonResponse.ok || !comparisonPayload.success || !comparisonPayload.data) {
-        throw new Error(comparisonPayload.error?.message || "Unable to load evaluation comparison.");
-      }
-      if (!drilldownResponse.ok || !drilldownPayload.success || !drilldownPayload.data) {
-        throw new Error(drilldownPayload.error?.message || "Unable to load evaluation drilldown.");
-      }
-
-      setEvaluationComparison(comparisonPayload.data);
-      setEvaluationDrilldown(drilldownPayload.data);
-    } finally {
-      setIsEvaluationLoading(false);
-    }
-  };
-
-  const runEvaluation = async () => {
-    setIsRunSubmitting(true);
-    try {
-      const payload = {
-        dataset_version: runDatasetVersion,
-        split: runSplit,
-        generation_seed: parseNumber(runGenerationSeed, 42),
-        // Prompt 04 default: held-out runs are configured for >=1000 synthetic cases.
-        total_cases: parseNumber(runTotalCases, 1000),
-        generate_if_missing: true,
-      };
-      const response = await fetch("/api/v1/evaluation/run", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      const runPayload = (await response.json()) as EvaluationRunResponse;
-      if (!response.ok || !runPayload.success || !runPayload.data) {
-        throw new Error(runPayload.error?.message || "Unable to run evaluation.");
-      }
-
-      const runId = runPayload.data.evaluation_run_id;
-      setSelectedEvaluationRunId(runId);
-      await loadEvaluationHistory();
-      await loadEvaluationRunInsights(runId);
-    } finally {
-      setIsRunSubmitting(false);
-    }
-  };
-
-  const loadCommandCenter = () => {
+  const loadCommandCenter = async () => {
     setIsLoading(true);
     setError(null);
-
-    Promise.all([loadSummary(), loadOpportunities(false), loadEvaluationHistory(), loadFailureScenarios(), loadRazorpayStatus()])
-      .catch((fetchError: Error) => {
-        setError(fetchError.message || "Unable to load command center data.");
-      })
-      .finally(() => setIsLoading(false));
+    try {
+      await Promise.all([loadSummary(), loadOpportunities(false), loadEvaluationHistory(), loadFailureScenarios(), loadRazorpayStatus()]);
+    } catch (fetchError) {
+      const message = fetchError instanceof Error ? fetchError.message : "Unable to load command center data.";
+      setError(message);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   useEffect(() => {
@@ -848,17 +821,7 @@ export function App() {
     loadOpportunities(true).catch((fetchError: Error) => {
       setError(fetchError.message || "Unable to load opportunities.");
     });
-  }, [
-    statusFilter,
-    actionFilter,
-    riskBucketFilter,
-    sortBy,
-    searchFilter,
-    opportunityPage,
-    opportunityPageSize,
-    opportunityPaginationMode,
-    opportunityCursor,
-  ]);
+  }, [statusFilter, actionFilter, searchFilter, opportunityPage, opportunityPageSize]);
 
   useEffect(() => {
     if (!selectedOpportunityId) {
@@ -887,99 +850,128 @@ export function App() {
       if (selectedOpportunityId) {
         loadOpportunityDetail(selectedOpportunityId).catch(() => undefined);
       }
-      if (selectedEvaluationRunId) {
-        loadEvaluationRunInsights(selectedEvaluationRunId).catch(() => undefined);
-      }
     }, 15000);
     return () => window.clearInterval(intervalId);
-  }, [autoRefreshEnabled, selectedOpportunityId, selectedEvaluationRunId]);
+  }, [autoRefreshEnabled, selectedOpportunityId]);
 
   const selectedItem = useMemo(
     () => opportunities.find((item) => item.id === selectedOpportunityId) ?? null,
     [opportunities, selectedOpportunityId],
   );
 
-  const selectedTimelineCollapseState = useMemo(() => {
-    if (!selectedOpportunityId) {
-      return {} as Record<string, boolean>;
+  const modeLabel = useMemo(() => {
+    if (summary?.mode === "razorpay_test" || razorpayStatus?.test_mode) {
+      return "RAZORPAY TEST MODE";
     }
-    return timelineCollapsedByOpportunity[selectedOpportunityId] || {};
-  }, [selectedOpportunityId, timelineCollapsedByOpportunity]);
+    return "SIMULATION MODE";
+  }, [summary?.mode, razorpayStatus?.test_mode]);
 
-  const updateSelectedTimelineCollapseState = (nextState: Record<string, boolean>) => {
-    if (!selectedOpportunityId) {
-      return;
-    }
-    setTimelineCollapsedByOpportunity((prev) => ({
-      ...prev,
-      [selectedOpportunityId]: nextState,
-    }));
-  };
+  const healthItems = useMemo<HealthItem[]>(() => {
+    const aiHealthy = Boolean(detail?.evidence.diagnosis || detail?.evidence.provider || selectedItem?.recommended_action);
+    const policyHealthy = Boolean(detail?.policy_checks.result || summary);
+    return [
+      {
+        label: "Razorpay API",
+        healthy: Boolean(razorpayStatus?.api_connectivity),
+        note: razorpayStatus?.api_connectivity_reason || (razorpayStatus?.api_connectivity ? "Connected" : "Disconnected"),
+      },
+      {
+        label: "Webhook",
+        healthy: Boolean(razorpayStatus?.webhook_configured),
+        note: razorpayStatus?.last_event ? `${razorpayStatus.last_event} ${formatIsoTimestamp(razorpayStatus.last_event_received_at || null)}` : "No recent event",
+      },
+      {
+        label: "AI",
+        healthy: aiHealthy,
+        note: aiHealthy ? "Diagnosis available" : "Awaiting explainability signal",
+      },
+      {
+        label: "Policy Engine",
+        healthy: policyHealthy,
+        note: detail?.policy_checks.result ? `Latest decision ${detail.policy_checks.result}` : "Awaiting policy decision",
+      },
+    ];
+  }, [razorpayStatus, detail, selectedItem, summary]);
 
-  const modeTone = summary?.mode === "razorpay_test" ? "#075985" : "#065f46";
-  const modeBadgeBackground = summary?.mode === "razorpay_test" ? "#e0f2fe" : "#dcfce7";
   const recoveredCoverage = summary && summary.recoverable_revenue_minor > 0
     ? summary.gross_recovered_minor / summary.recoverable_revenue_minor
     : 0;
 
+  const journeyState = detail ? inferJourneyStates(detail) : null;
+  const policyDecision = detail ? getPolicyDecision(detail) : "PENDING";
+  const latestAttemptWithLink = detail?.attempts.find((attempt) => Boolean(attempt.payment_link)) || null;
+  const paymentLinkUrl = detail ? extractPaymentLinkUrl(detail, razorpayStatus) : null;
+
   return (
-    <main className="app-shell">
-      <section className="app-container">
-        <header className="header-row">
+    <main className="ui-shell">
+      <section className="ui-container">
+        <header className="hero panel">
           <div>
-            <h1 className="header-title">RecoverIQ Command Center</h1>
-            <p className="header-subtitle">
-              Revenue recovery operations view for AI diagnosis, deterministic policy execution, and payment outcome verification.
-            </p>
+            <p className="eyebrow">RecoverIQ</p>
+            <h1>AI Revenue Recovery Command Center</h1>
+            <p className="hero-copy">Recover revenue that would otherwise be lost.</p>
+            <p className="hero-flow">Detect {"->"} Diagnose {"->"} Decide {"->"} Recover {"->"} Verify</p>
           </div>
-          <div className="action-row">
-            <button onClick={loadCommandCenter} style={buttonStyle} className="btn">
-              Refresh Now
-            </button>
-            <button
-              onClick={() => runDemoMutation("/api/v1/demo/reset-core-recovery")}
-              disabled={isDemoMutating}
-              style={{ ...buttonStyle, background: "#334155", opacity: isDemoMutating ? 0.7 : 1 }}
-              className="btn btn-secondary"
-            >
-              Reset Demo
+          <div className="hero-actions">
+            <div className="mode-chip">{modeLabel}</div>
+            <button onClick={loadCommandCenter} className="btn btn-primary" style={DEFAULT_BUTTON_STYLE}>
+              Refresh
             </button>
             <button
               onClick={() => runDemoMutation("/api/v1/demo/seed-core-recovery")}
+              className="btn btn-secondary"
+              style={{ ...DEFAULT_BUTTON_STYLE, opacity: isDemoMutating ? 0.7 : 1 }}
               disabled={isDemoMutating}
-              style={{ ...buttonStyle, background: "#0f766e", opacity: isDemoMutating ? 0.7 : 1 }}
-              className="btn btn-accent"
             >
-              Seed Demo
+              Seed State
             </button>
-            <label style={{ display: "flex", gap: 8, alignItems: "center", color: "#334155", fontSize: 13 }}>
+            <button
+              onClick={() => runDemoMutation("/api/v1/demo/reset-core-recovery")}
+              className="btn btn-tertiary"
+              style={{ ...DEFAULT_BUTTON_STYLE, opacity: isDemoMutating ? 0.7 : 1 }}
+              disabled={isDemoMutating}
+            >
+              Empty State
+            </button>
+            <label className="auto-refresh-toggle">
               <input
                 type="checkbox"
                 checked={autoRefreshEnabled}
                 onChange={(event) => setAutoRefreshEnabled(event.target.checked)}
               />
-              Auto-refresh (15s)
+              Auto-refresh every 15s
             </label>
           </div>
         </header>
 
-        {demoMutationMessage ? (
-          <section className="panel" style={{ marginBottom: 12 }}>
-            <p className="meta">{demoMutationMessage}</p>
-          </section>
-        ) : null}
+        <section className="panel health-panel">
+          <h2>Operating Health</h2>
+          <div className="health-grid">
+            {healthItems.map((item) => (
+              <article key={item.label} className="health-item">
+                <div className="health-head">
+                  <span>{item.label}</span>
+                  <Badge text={item.healthy ? "HEALTHY" : "DEGRADED"} tone={item.healthy ? "good" : "bad"} />
+                </div>
+                <p>{item.note}</p>
+              </article>
+            ))}
+          </div>
+          {demoMutationMessage ? <p className="helper-message">{demoMutationMessage}</p> : null}
+        </section>
 
         {isLoading ? (
-          <section className="panel">
-            <h3 className="section-title">Loading command center</h3>
-            <p className="section-subtitle">Fetching live operational metrics and workflow detail...</p>
+          <section className="panel loading-panel">
+            <h2>Loading command center</h2>
+            <p>Fetching live metrics, opportunities, and evaluation telemetry.</p>
           </section>
         ) : null}
 
         {!isLoading && error ? (
-          <section className="panel alert-error">
-            <p style={{ marginTop: 0 }}>{error}</p>
-            <button onClick={loadCommandCenter} className="btn" style={{ ...buttonStyle, background: "#b91c1c" }}>
+          <section className="panel error-panel">
+            <h2>Unable to load data</h2>
+            <p>{error}</p>
+            <button onClick={loadCommandCenter} className="btn btn-danger" style={DEFAULT_BUTTON_STYLE}>
               Retry
             </button>
           </section>
@@ -987,176 +979,213 @@ export function App() {
 
         {!isLoading && !error && summary ? (
           <>
-            <section className="panel mode-banner">
-              <div>
-                <h2 className="section-title" style={{ marginBottom: 6 }}>Operating Mode</h2>
-                <p className="section-subtitle" style={{ marginTop: 0 }}>
-                  Simulation and Razorpay Test Mode are intentionally separated to prevent interpretation errors during demos.
-                </p>
-                {razorpayStatus ? (
-                  <>
-                    <p className="mode-meta">
-                      Razorpay checks: Test Mode {razorpayStatus.test_mode ? "ON" : "OFF"} | Adapter {razorpayStatus.adapter_mode || "unknown"} | Webhook {razorpayStatus.webhook_configured ? "configured" : "missing"} | Live Mode {razorpayStatus.live_mode_detected ? "detected" : "not detected"} | API connectivity {razorpayStatus.api_connectivity ? "connected" : "not connected"}{razorpayStatus.api_connectivity_reason ? ` (${razorpayStatus.api_connectivity_reason})` : ""}
-                    </p>
-                    <p className="mode-meta">
-                      Last successful Razorpay API operation: {razorpayStatus.last_successful_razorpay_operation
-                        ? `${razorpayStatus.last_successful_razorpay_operation.operation} ${razorpayStatus.last_successful_razorpay_operation.payment_link_id} (${formatIsoTimestamp(razorpayStatus.last_successful_razorpay_operation.updated_at)})`
-                        : "none"}
-                    </p>
-                    <p className="mode-meta">
-                      Last webhook event: {razorpayStatus.last_event
-                        ? `${razorpayStatus.last_event} (${razorpayStatus.last_event_status || "unknown"}) ${formatIsoTimestamp(razorpayStatus.last_event_received_at || null)}`
-                        : "none"}
-                    </p>
-                  </>
-                ) : (
-                  <p className="mode-meta">Razorpay integration status not available.</p>
-                )}
-              </div>
-              <span className="mode-badge" style={{ color: modeTone, background: modeBadgeBackground }}>
-                {summary.mode_label.toUpperCase()}
-              </span>
-            </section>
-
-            {isEmptySummary(summary) ? (
-              <section className="panel empty-block">
-                <h3 className="section-title">No command center metrics yet</h3>
-                <p className="section-subtitle">
-                  Metrics appear after failed-payment workflows create opportunities and attempt recovery actions.
-                </p>
-              </section>
-            ) : (
-              <section className="panel">
-                <h2 className="section-title">Revenue Recovery Snapshot</h2>
-                <p className="section-subtitle">Live KPI set for risk, execution, policy gates, and net impact.</p>
-                <div className="kpi-grid" style={{ marginTop: 12 }}>
-                  <MetricCard title="Revenue at Risk" value={formatMinorCurrency(summary.revenue_at_risk_minor)} context="Failed payments not yet recovered" />
-                  <MetricCard title="Recovered Revenue" value={formatMinorCurrency(summary.gross_recovered_minor)} context={`Recovered ${formatPercent(Math.max(0, recoveredCoverage))} of recoverable revenue`} />
-                  <MetricCard title="Recovery Rate" value={formatPercent(summary.recovery_rate)} context="Recovered / recoverable ratio" />
-                  <MetricCard title="Active Opportunities" value={String(summary.active_opportunities)} context="Currently queued or in-progress" />
-                  <MetricCard title="Recovery Attempts" value={String(summary.recovery_attempts)} context="Total attempts executed" />
-                  <MetricCard title="Blocked / Escalated" value={`${summary.blocked_actions} / ${summary.escalated_actions ?? summary.escalations}`} context="Guardrails preventing unsafe execution" />
-                  <MetricCard title="Net Recovered" value={formatMinorCurrency(summary.net_recovered_minor)} context="Recovered less intervention cost" />
-                </div>
-              </section>
-            )}
-
             <section className="panel">
-              <h3 className="section-title">Policy Outcomes</h3>
-              <p className="section-subtitle">Deterministic policy decisions across current command center data.</p>
-              <div className="pill-row" style={{ marginTop: 8 }}>
-                <Badge tone="pass" text={`ALLOWED ${summary.allowed_actions ?? summary.approved_actions}`} />
-                <Badge tone="fail" text={`BLOCKED ${summary.blocked_actions}`} />
-                <Badge tone="pending" text={`ESCALATED ${summary.escalated_actions ?? summary.escalations}`} />
-              </div>
+              <h2>Revenue Recovery Snapshot</h2>
+              <p className="panel-copy">Live business indicators from the active operating mode.</p>
+              {isEmptySummary(summary) ? (
+                <div className="empty-state">
+                  <h3>No active revenue recovery yet</h3>
+                  <p>Use Seed State to load opportunities, or wait for failed payments to enter the recovery workflow.</p>
+                </div>
+              ) : (
+                <div className="kpi-grid">
+                  <KpiCard title="Revenue At Risk" value={formatMinorCurrency(summary.revenue_at_risk_minor)} note="Total failed-payment exposure" />
+                  <KpiCard title="Recoverable Revenue" value={formatMinorCurrency(summary.recoverable_revenue_minor)} note="Policy-eligible exposure" />
+                  <KpiCard title="Recovered Revenue" value={formatMinorCurrency(summary.gross_recovered_minor)} note={`Coverage ${formatPercent(recoveredCoverage)}`} />
+                  <KpiCard title="Recovery Rate" value={formatPercent(summary.recovery_rate)} note="Recovered / recoverable" />
+                  <KpiCard title="Active Opportunities" value={String(summary.active_opportunities)} note="Open recovery workflows" />
+                  <KpiCard title="Recovery Attempts" value={String(summary.recovery_attempts)} note="Total attempts executed" />
+                </div>
+              )}
             </section>
 
             <section className="workspace-grid">
-              <article className="panel opportunities-panel">
-                <h3 className="section-title">Opportunities</h3>
-                <p className="section-subtitle">Prioritize by risk, expected recovery, confidence, and policy outcome.</p>
+              <article className="panel detail-primary">
+                <h2>Opportunity Detail</h2>
+                <p className="panel-copy">Primary recovery workflow view from failed payment to verified outcome.</p>
+
+                {!selectedItem ? (
+                  <div className="empty-state">
+                    <h3>No opportunity selected</h3>
+                    <p>Select an opportunity to inspect AI diagnosis, policy authorization, payment action, and audit trace.</p>
+                  </div>
+                ) : null}
+
+                {selectedItem && isDetailLoading ? <p className="helper-message">Loading opportunity detail...</p> : null}
+
+                {selectedItem && detail && !isDetailLoading ? (
+                  <div className="detail-layout">
+                    <section className="journey-panel">
+                      <h3>Recovery Timeline</h3>
+                      <div className="journey-track" aria-label="Recovery timeline">
+                        {JOURNEY_STAGES.map((stage, index) => {
+                          const reached = journeyState?.reached[index] || false;
+                          const active = (journeyState?.activeIndex || 0) === index;
+                          return (
+                            <div key={stage} className={`journey-stage ${reached ? "reached" : ""} ${active ? "active" : ""}`}>
+                              <span>{stage}</span>
+                              {index < JOURNEY_STAGES.length - 1 ? <span className="journey-arrow">↓</span> : null}
+                            </div>
+                          );
+                        })}
+                      </div>
+                      <p className="helper-message">
+                        Current state: <strong>{toTitle(detail.recovery_state.current || "pending")}</strong>
+                      </p>
+                    </section>
+
+                    <section className="insight-grid">
+                      <article className="info-card">
+                        <h3>AI Explanation</h3>
+                        <p><strong>Diagnosis:</strong> {detail.evidence.diagnosis || "-"}</p>
+                        <p><strong>Evidence:</strong> {detail.evidence.decision_source || "Model signal unavailable"}</p>
+                        <p><strong>Confidence:</strong> {formatPercent(detail.opportunity.confidence)}</p>
+                        <p><strong>Recommended Action:</strong> {detail.action_traceability.recommended_action || "-"}</p>
+                      </article>
+
+                      <article className="info-card">
+                        <h3>Deterministic Policy</h3>
+                        <p className={`policy-decision ${policyDecision === "ALLOW" ? "allow" : policyDecision === "BLOCK" ? "block" : "pending"}`}>
+                          POLICY: {policyDecision}
+                        </p>
+                        <div className="check-grid">
+                          {Object.entries(detail.policy_checks.checks).map(([key, passed]) => (
+                            <div key={key} className="check-item">
+                              <span>{getPolicyCheckLabel(key)}</span>
+                              <span className={passed ? "check-pass" : "check-fail"}>{passed ? "✓" : "✕"}</span>
+                            </div>
+                          ))}
+                          {Object.keys(detail.policy_checks.checks).length === 0 ? <p className="helper-message">No policy checks reported.</p> : null}
+                        </div>
+                        <p className="helper-message">Execution is authorized by policy controls, not by AI recommendation.</p>
+                      </article>
+
+                      <article className="info-card">
+                        <h3>Razorpay Payment Link</h3>
+                        {latestAttemptWithLink?.payment_link ? (
+                          <>
+                            <p><strong>Payment Link ID:</strong> {latestAttemptWithLink.payment_link.payment_link_id}</p>
+                            <p><strong>Status:</strong> {latestAttemptWithLink.payment_link.status}</p>
+                            <p><strong>Reference:</strong> {latestAttemptWithLink.payment_link.payment_link_reference_id}</p>
+                            {paymentLinkUrl ? (
+                              <a href={paymentLinkUrl} target="_blank" rel="noreferrer" className="pay-link">
+                                Open Payment Link
+                              </a>
+                            ) : (
+                              <p className="helper-message">Payment link URL is not exposed by this detail payload.</p>
+                            )}
+                          </>
+                        ) : (
+                          <p className="helper-message">No Razorpay payment link created for the selected opportunity yet.</p>
+                        )}
+                      </article>
+
+                      <article className="info-card">
+                        <h3>Outcome</h3>
+                        <p><strong>Outcome Status:</strong> {detail.semantic_states?.business_outcome || detail.action_traceability.latest_verified_outcome || "NOT_RECOVERED"}</p>
+                        <p><strong>Recovered Revenue:</strong> {formatMinorCurrency(detail.economics.gross_recovered_minor)}</p>
+                        <p><strong>Net Recovered:</strong> {formatMinorCurrency(detail.economics.net_recovered_minor)}</p>
+                        <p><strong>Attempts:</strong> {detail.action_traceability.attempt_count}</p>
+                      </article>
+                    </section>
+
+                    <section className="audit-panel">
+                      <h3>Audit Timeline</h3>
+                      {detail.timeline_groups.length === 0 ? (
+                        <p className="helper-message">No audit events available.</p>
+                      ) : (
+                        <div className="audit-group-list">
+                          {detail.timeline_groups.map((group) => {
+                            const isCollapsed = timelineCollapsed[group.group] || false;
+                            return (
+                              <article key={group.group} className="audit-group">
+                                <header>
+                                  <div>
+                                    <strong>{group.group}</strong>
+                                    <div className="badge-row">
+                                      <Badge text={`PASS ${group.counts.pass}`} tone="good" />
+                                      <Badge text={`FAIL ${group.counts.fail}`} tone="bad" />
+                                      <Badge text={`PENDING ${group.counts.pending}`} tone="warn" />
+                                    </div>
+                                  </div>
+                                  <button
+                                    onClick={() => setTimelineCollapsed((prev) => ({ ...prev, [group.group]: !isCollapsed }))}
+                                    className="btn btn-inline"
+                                    style={DEFAULT_BUTTON_STYLE}
+                                  >
+                                    {isCollapsed ? "Expand" : "Collapse"}
+                                  </button>
+                                </header>
+                                {!isCollapsed ? (
+                                  <div className="audit-event-list">
+                                    {group.events.map((event, index) => (
+                                      <details key={`${group.group}-${index}`} className="audit-event">
+                                        <summary>
+                                          <Badge
+                                            text={event.outcome_status.toUpperCase()}
+                                            tone={event.outcome_status === "pass" ? "good" : event.outcome_status === "fail" ? "bad" : "warn"}
+                                          />
+                                          <span>{event.event_type}</span>
+                                          <span>{formatIsoTimestamp(event.timestamp)}</span>
+                                        </summary>
+                                        <div>
+                                          <p><strong>Actor:</strong> {event.actor_type}</p>
+                                          <p><strong>Stage:</strong> {event.stage || "-"}</p>
+                                          <p><strong>Reason:</strong> {event.reason || "-"}</p>
+                                          <pre>{serializeEvidence(event.outcome || {})}</pre>
+                                        </div>
+                                      </details>
+                                    ))}
+                                  </div>
+                                ) : null}
+                              </article>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </section>
+                  </div>
+                ) : null}
+              </article>
+
+              <article className="panel opportunities-secondary">
+                <h2>Opportunities</h2>
+                <p className="panel-copy">Revenue opportunities ranked for action with policy and outcome context.</p>
+
                 <div className="filter-grid">
-                  <div className="form-field form-field-full">
-                    <label htmlFor="opportunity-search" className="field-label">Search opportunities</label>
+                  <div className="field-block search-field">
+                    <label htmlFor="search">Search</label>
                     <input
-                      id="opportunity-search"
+                      id="search"
+                      className="text-input"
                       value={searchInput}
                       onChange={(event) => setSearchInput(event.target.value)}
-                      placeholder="Search id, reason, action, customer"
-                      className="field"
+                      placeholder="customer, reason, action"
                     />
                   </div>
-                  <div className="filter-row" style={{ gridTemplateColumns: isMobile ? "1fr" : "repeat(2, minmax(0, 1fr))" }}>
-                    <div className="form-field">
-                      <label htmlFor="opportunity-status" className="field-label">Status</label>
-                      <select id="opportunity-status" value={statusFilter} onChange={(event) => { resetCursorPagination(); setStatusFilter(event.target.value); }} className="select">
-                        <option value="ALL">All Status</option>
-                        <option value="OPEN">OPEN</option>
-                        <option value="RESOLVED">RESOLVED</option>
-                        <option value="CLOSED">CLOSED</option>
-                      </select>
-                    </div>
-                    <div className="form-field">
-                      <label htmlFor="opportunity-action" className="field-label">Action</label>
-                      <select id="opportunity-action" value={actionFilter} onChange={(event) => { resetCursorPagination(); setActionFilter(event.target.value); }} className="select">
-                        <option value="ALL">All Actions</option>
-                        <option value="RETRY">RETRY</option>
-                        <option value="DELAYED_RETRY">DELAYED_RETRY</option>
-                        <option value="RECOVERY_PROMPT">RECOVERY_PROMPT</option>
-                        <option value="ALTERNATE_PAYMENT_PATH">ALTERNATE_PAYMENT_PATH</option>
-                        <option value="ESCALATE">ESCALATE</option>
-                      </select>
-                    </div>
-                    <div className="form-field">
-                      <label htmlFor="opportunity-risk-bucket" className="field-label">Risk bucket</label>
-                      <select id="opportunity-risk-bucket" value={riskBucketFilter} onChange={(event) => { resetCursorPagination(); setRiskBucketFilter(event.target.value); }} className="select">
-                        <option value="ALL">All Risk Buckets</option>
-                        <option value="LOW">LOW</option>
-                        <option value="MEDIUM">MEDIUM</option>
-                        <option value="HIGH">HIGH</option>
-                      </select>
-                    </div>
-                    <div className="form-field">
-                      <label htmlFor="opportunity-sort" className="field-label">Sort by</label>
-                      <select
-                        id="opportunity-sort"
-                        value={sortBy}
-                        onChange={(event) => {
-                          const nextSort = event.target.value;
-                          if (opportunityPaginationMode === "cursor" && nextSort !== "updated_desc") {
-                            setCursorHelperMessage("Cursor mode supports Latest Updated sort only.");
-                            return;
-                          }
-                          resetCursorPagination();
-                          setSortBy(nextSort);
-                        }}
-                        className="select"
-                      >
-                        <option value="updated_desc">Latest Updated</option>
-                        <option value="risk_desc">Risk Amount High-Low</option>
-                        <option value="risk_asc">Risk Amount Low-High</option>
-                        <option value="confidence_desc">Confidence High-Low</option>
-                        <option value="probability_desc">Recovery Probability High-Low</option>
-                      </select>
-                    </div>
-                    <div className="form-field">
-                      <label htmlFor="opportunity-pagination-mode" className="field-label">Pagination mode</label>
-                      <select
-                        id="opportunity-pagination-mode"
-                        value={opportunityPaginationMode}
-                        onChange={(event) => {
-                          const mode = event.target.value === "cursor" ? "cursor" : "page";
-                          let cursorSortResetApplied = false;
-                          if (mode === "cursor" && sortBy !== "updated_desc") {
-                            setSortBy("updated_desc");
-                            cursorSortResetApplied = true;
-                          }
-                          setOpportunityPaginationMode(mode);
-                          resetCursorPagination();
-                          if (cursorSortResetApplied) {
-                            setCursorHelperMessage("Cursor mode supports Latest Updated sort only. Sort has been reset.");
-                          }
-                        }}
-                        className="select"
-                      >
-                        <option value="page">Page Pagination</option>
-                        <option value="cursor">Cursor Pagination</option>
-                      </select>
-                    </div>
+                  <div className="field-block">
+                    <label htmlFor="status">Status</label>
+                    <select id="status" className="select-input" value={statusFilter} onChange={(event) => { setOpportunityPage(1); setStatusFilter(event.target.value); }}>
+                      <option value="ALL">All</option>
+                      <option value="OPEN">OPEN</option>
+                      <option value="RESOLVED">RESOLVED</option>
+                      <option value="CLOSED">CLOSED</option>
+                    </select>
                   </div>
-                  {opportunityPaginationMode === "cursor" ? (
-                    <p className="meta cursor-mode-hint">Cursor mode only supports Latest Updated.</p>
-                  ) : null}
-                  <div className="action-row filter-actions">
-                    <button
-                      onClick={() => {
-                        resetCursorPagination();
-                        setSearchFilter(searchInput);
-                      }}
-                      className="btn"
-                      style={buttonStyle}
-                    >
-                      Apply Filters
+                  <div className="field-block">
+                    <label htmlFor="action">Recovery Action</label>
+                    <select id="action" className="select-input" value={actionFilter} onChange={(event) => { setOpportunityPage(1); setActionFilter(event.target.value); }}>
+                      <option value="ALL">All</option>
+                      <option value="RETRY">RETRY</option>
+                      <option value="DELAYED_RETRY">DELAYED_RETRY</option>
+                      <option value="RECOVERY_PROMPT">RECOVERY_PROMPT</option>
+                      <option value="ALTERNATE_PAYMENT_PATH">ALTERNATE_PAYMENT_PATH</option>
+                      <option value="ESCALATE">ESCALATE</option>
+                    </select>
+                  </div>
+                  <div className="filter-actions">
+                    <button onClick={() => { setOpportunityPage(1); setSearchFilter(searchInput); }} className="btn btn-primary" style={DEFAULT_BUTTON_STYLE}>
+                      Apply
                     </button>
                     <button
                       onClick={() => {
@@ -1164,82 +1193,73 @@ export function App() {
                         setSearchFilter("");
                         setStatusFilter("ALL");
                         setActionFilter("ALL");
-                        setRiskBucketFilter("ALL");
-                        setSortBy("updated_desc");
-                        setOpportunityPaginationMode("page");
-                        resetCursorPagination();
+                        setOpportunityPage(1);
                       }}
-                      className="btn btn-secondary"
-                      style={{ ...buttonStyle, background: "#475569" }}
+                      className="btn btn-tertiary"
+                      style={DEFAULT_BUTTON_STYLE}
                     >
                       Reset
                     </button>
                   </div>
                 </div>
 
-                {isOpportunityLoading ? <p className="meta opportunities-loading">Refreshing opportunities...</p> : null}
+                {isOpportunityLoading ? <p className="helper-message">Refreshing opportunities...</p> : null}
 
                 {opportunities.length === 0 ? (
-                  <div className="empty-block opportunities-empty">
-                    <p className="meta" style={{ margin: 0 }}>
-                      No opportunities match this filter set. Adjust filters or reset to inspect all active opportunities.
-                    </p>
+                  <div className="empty-state">
+                    <h3>No opportunities found</h3>
+                    <p>Try a broader filter set or seed the simulation.</p>
                   </div>
                 ) : (
-                  <div className={`table-wrap ${isTabletOrLower ? "table-wrap-mobile" : ""}`}>
-                    <table className="table opportunities-table">
+                  <div className="table-wrapper">
+                    <table className="opportunities-table">
                       <thead>
                         <tr>
-                          <th className="sticky-col">Opportunity</th>
-                          <th>Risk</th>
+                          <th>Opportunity</th>
+                          <th>Failure</th>
                           <th>Amount</th>
                           <th>Expected Recovery</th>
                           <th>Confidence</th>
-                          <th>Policy / Action</th>
-                          <th>Status</th>
-                          <th>Updated</th>
+                          <th>Policy</th>
+                          <th>Recovery Action</th>
+                          <th>Outcome</th>
                         </tr>
                       </thead>
                       <tbody>
                         {opportunities.map((item) => {
-                          const isSelected = item.id === selectedOpportunityId;
+                          const selected = item.id === selectedOpportunityId;
                           return (
-                            <tr
-                              key={item.id}
-                              onClick={() => setSelectedOpportunityId(item.id)}
-                              className={`row-selectable ${isSelected ? "row-selected" : ""}`}
-                            >
-                              <td className="sticky-col">
-                                <strong>#{item.id}</strong>
-                                <p className="meta" style={{ marginTop: 4 }}>{item.customer_reference || "-"}</p>
-                                <p className="meta" style={{ marginTop: 4 }}>{item.failure_reason || item.failure_category || "-"}</p>
+                            <tr key={item.id} className={selected ? "selected-row" : ""} onClick={() => setSelectedOpportunityId(item.id)}>
+                              <td>
+                                <p className="row-title">#{item.id}</p>
+                                <p className="row-subtitle">{item.customer_reference || "-"}</p>
                               </td>
                               <td>
-                                <Badge tone={toRiskTone(item.risk_bucket)} text={item.risk_bucket || "UNKNOWN"} />
+                                <p>{item.failure_category || "-"}</p>
+                                <p className="row-subtitle">{item.failure_reason || "-"}</p>
                               </td>
                               <td>{formatMinorCurrency(item.amount_at_risk_minor)}</td>
                               <td>
                                 {formatMinorCurrency(item.expected_recovery_minor)}
-                                <p className="meta" style={{ marginTop: 4 }}>
-                                  Net {formatMinorCurrency(item.expected_net_recovery_minor)}
-                                </p>
+                                <p className="row-subtitle">Net {formatMinorCurrency(item.expected_net_recovery_minor)}</p>
                               </td>
                               <td>
-                                <p style={{ margin: 0 }}>{formatPercentValue(item.confidence)}</p>
-                                <p className="meta" style={{ marginTop: 4 }}>Recovery {formatPercentValue(item.recovery_probability)}</p>
-                              </td>
-                              <td>
-                                <div className="pill-row">
-                                  <Badge tone={toPolicyTone(item.policy_result)} text={item.policy_result || "PENDING"} />
+                                <div className="badge-row">
+                                  <Badge text={formatPercent(item.confidence)} tone={toToneForRisk(item.risk_bucket)} />
                                 </div>
-                                <p className="meta" style={{ marginTop: 4 }}>{item.recommended_action || "NO_ACTION"}</p>
                               </td>
                               <td>
-                                <Badge tone={toOutcomeTone(item.business_outcome_status || item.latest_verified_outcome || item.latest_attempt_status || item.status)} text={item.business_outcome_status || item.status} />
-                                <p className="meta" style={{ marginTop: 4 }}>Opportunity: {item.status}</p>
+                                <Badge text={item.policy_result || "PENDING"} tone={toToneForOutcome(item.policy_result)} />
                               </td>
                               <td>
-                                <span className="meta">{formatIsoTimestamp(item.updated_at)}</span>
+                                <p>{item.recommended_action || "NO_ACTION"}</p>
+                                <p className="row-subtitle">{item.status}</p>
+                              </td>
+                              <td>
+                                <Badge
+                                  text={item.business_outcome_status || item.latest_verified_outcome || item.latest_attempt_status || "PENDING"}
+                                  tone={toToneForOutcome(item.business_outcome_status || item.latest_verified_outcome || item.latest_attempt_status)}
+                                />
                               </td>
                             </tr>
                           );
@@ -1249,393 +1269,234 @@ export function App() {
                   </div>
                 )}
 
-                {isTabletOrLower ? (
-                  <p className="meta table-scroll-tip">
-                    Tip: horizontally scroll the table to compare risk, confidence, and policy context while keeping the opportunity column pinned.
-                  </p>
-                ) : null}
-
                 <div className="pagination-row">
-                  <p className="meta">
-                    {opportunityPaginationMode === "cursor"
-                      ? `Cursor mode | Showing ${opportunities.length} of ${opportunityTotalCount}`
-                      : `Page ${opportunityPage} / ${opportunityTotalPages} | Showing ${opportunities.length} of ${opportunityTotalCount}`}
-                  </p>
-                  <div className="action-row">
-                    <div className="inline-field">
-                      <label htmlFor="opportunity-page-size" className="field-label field-label-inline">Rows per page</label>
-                      <select
-                        id="opportunity-page-size"
-                        value={String(opportunityPageSize)}
-                        onChange={(event) => {
-                          resetCursorPagination();
-                          setOpportunityPageSize(parseNumber(event.target.value, 20));
-                        }}
-                        className="select"
-                      >
-                        <option value="10">10</option>
-                        <option value="20">20</option>
-                        <option value="40">40</option>
-                        <option value="80">80</option>
-                      </select>
-                    </div>
-                    <button
-                      onClick={() => {
-                        if (opportunityPaginationMode === "cursor") {
-                          const previousCursor = opportunityCursorHistory[opportunityCursorHistory.length - 1] || null;
-                          setOpportunityCursorHistory((prev) => prev.slice(0, Math.max(0, prev.length - 1)));
-                          setOpportunityCursor(previousCursor);
-                          return;
-                        }
-                        setOpportunityPage((prev) => Math.max(1, prev - 1));
+                  <p>{`Page ${opportunityPage} of ${opportunityTotalPages} | ${opportunityTotalCount} opportunities`}</p>
+                  <div>
+                    <label htmlFor="page-size">Rows</label>
+                    <select
+                      id="page-size"
+                      className="select-input compact"
+                      value={String(opportunityPageSize)}
+                      onChange={(event) => {
+                        setOpportunityPage(1);
+                        setOpportunityPageSize(parseNumber(event.target.value, 20));
                       }}
+                    >
+                      <option value="10">10</option>
+                      <option value="20">20</option>
+                      <option value="40">40</option>
+                      <option value="80">80</option>
+                    </select>
+                    <button
+                      onClick={() => setOpportunityPage((prev) => Math.max(1, prev - 1))}
                       disabled={!opportunityHasPrev}
-                      className="btn"
-                      style={{ ...buttonStyle, opacity: opportunityHasPrev ? 1 : 0.5 }}
+                      className="btn btn-inline"
+                      style={DEFAULT_BUTTON_STYLE}
                     >
                       Prev
                     </button>
                     <button
-                      onClick={() => {
-                        if (opportunityPaginationMode === "cursor") {
-                          if (!opportunityNextCursor) {
-                            return;
-                          }
-                          setOpportunityCursorHistory((prev) => [...prev, opportunityCursor || ""]);
-                          setOpportunityCursor(opportunityNextCursor);
-                          return;
-                        }
-                        setOpportunityPage((prev) => prev + 1);
-                      }}
+                      onClick={() => setOpportunityPage((prev) => prev + 1)}
                       disabled={!opportunityHasNext}
-                      className="btn"
-                      style={{ ...buttonStyle, opacity: opportunityHasNext ? 1 : 0.5 }}
+                      className="btn btn-inline"
+                      style={DEFAULT_BUTTON_STYLE}
                     >
                       Next
                     </button>
                   </div>
                 </div>
-
-                {opportunityPaginationMode === "cursor" ? (
-                  <div className="action-row cursor-actions">
-                    <button onClick={resetCursorPagination} className="btn" style={{ ...buttonStyle, padding: "6px 10px", fontSize: 12 }}>
-                      Jump to Start
-                    </button>
-                    <button onClick={handleCopyCursorToken} className="btn" style={{ ...buttonStyle, padding: "6px 10px", fontSize: 12, background: "#1d4ed8" }}>
-                      Copy Cursor
-                    </button>
-                    <button onClick={handleShareCursorLink} className="btn" style={{ ...buttonStyle, padding: "6px 10px", fontSize: 12, background: "#0f766e" }}>
-                      Copy/Share Cursor Link
-                    </button>
-                    <span className="meta">Current: {opportunityCursor ? `${opportunityCursor.slice(0, 14)}...` : "START"}</span>
-                  </div>
-                ) : null}
-
-                {cursorHelperMessage ? <p className="meta cursor-helper-message">{cursorHelperMessage}</p> : null}
-              </article>
-
-              <article className="panel detail-panel">
-                <h3 className="section-title">Opportunity Detail & Explainability</h3>
-                <p className="section-subtitle">From failed payment signal to verified recovered outcome.</p>
-                {!selectedItem ? (
-                  <div className="empty-block detail-empty">
-                    <p className="meta" style={{ margin: 0 }}>Select an opportunity to inspect workflow evidence and policy traceability.</p>
-                  </div>
-                ) : null}
-                {selectedItem && isDetailLoading ? <p className="meta detail-loading">Loading opportunity detail...</p> : null}
-                {selectedItem && !isDetailLoading && detail ? (
-                  <div className="detail-grid detail-content-grid">
-                    <article className="detail-card">
-                      <h4>Recovery Journey</h4>
-                      <div className="stage-flow">
-                        {detail.recovery_state.stages.map((stage) => {
-                          const reached = stage.reached;
-                          const active = detail.recovery_state.current === stage.name;
-                          return (
-                            <div key={stage.name} className={`stage-node ${reached ? "reached" : ""} ${active ? "active" : ""}`}>
-                              <p className="stage-label">{stage.name}</p>
-                              <p className="stage-value">{active ? "Current" : reached ? "Reached" : "Pending"}</p>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </article>
-
-                    <div className="explainability-grid">
-                      <DetailBlock
-                        title="AI Recommendation"
-                        content={[
-                          `Diagnosis: ${detail.evidence.diagnosis || "-"}`,
-                          `Recommended action: ${detail.action_traceability.recommended_action || "-"}`,
-                          `Confidence: ${formatPercentValue(detail.opportunity.confidence)}`,
-                          `Recovery probability: ${formatPercentValue(detail.opportunity.recovery_probability)}`,
-                          `Provider: ${detail.evidence.provider || "-"} | Model: ${detail.evidence.model || "-"}`,
-                        ]}
-                      />
-                      <DetailBlock
-                        title="Deterministic Policy Decision"
-                        content={[
-                          `Policy result: ${detail.policy_checks.result || "-"}`,
-                          `Execution allowed: ${detail.action_traceability.allow_execution === null ? "-" : detail.action_traceability.allow_execution ? "YES" : "NO"}`,
-                          `Reason codes (failed): ${formatReasonCodes(detail.policy_checks.reason_codes.failed || [])}`,
-                          `Reason codes (passed): ${formatReasonCodes(detail.policy_checks.reason_codes.passed || [])}`,
-                          `Policy version: ${detail.policy_checks.policy_version || "-"}`,
-                        ]}
-                      />
-                      <DetailBlock
-                        title="Actual Payment Outcome"
-                        content={[
-                          `Original payment: ${detail.semantic_states?.original_payment || detail.payment?.status || "-"}`,
-                          `Recovery attempt: ${detail.semantic_states?.attempt || detail.action_traceability.latest_attempt_status || "-"}`,
-                          `Recovery payment: ${detail.semantic_states?.recovery_payment || "-"}`,
-                          `Verified outcome: ${detail.semantic_states?.verification || detail.action_traceability.latest_verified_outcome || "-"}`,
-                          `Business outcome: ${detail.semantic_states?.business_outcome || "NOT_RECOVERED"}`,
-                          `Gross recovered: ${formatMinorCurrency(detail.economics.gross_recovered_minor)}`,
-                          `Net recovered: ${formatMinorCurrency(detail.economics.net_recovered_minor)}`,
-                        ]}
-                      />
-                    </div>
-
-                    <DetailBlock
-                      title="Payment & Failure Context"
-                      content={[
-                        `Payment id: ${detail.payment?.razorpay_payment_id || "-"}`,
-                        `Order id: ${detail.payment?.razorpay_order_id || "-"}`,
-                        `Amount: ${detail.payment ? formatMinorCurrency(detail.payment.amount_minor) : "-"}`,
-                        `Failure category: ${detail.failure.category || "-"}`,
-                        `Failure reason: ${detail.failure.reason || "-"}`,
-                        `Failure code: ${detail.failure.payment_failure_code || "-"}`,
-                      ]}
-                    />
-                    <DetailBlock
-                      title="Economic Impact"
-                      content={[
-                        `Expected recovery: ${formatMinorCurrency(detail.economics.expected_recovery_minor)}`,
-                        `Intervention cost estimate: ${formatMinorCurrency(detail.economics.estimated_intervention_cost_minor)}`,
-                        `Expected net recovery: ${formatMinorCurrency(detail.economics.expected_net_recovery_minor)}`,
-                        `Total intervention cost: ${formatMinorCurrency(detail.economics.total_intervention_cost_minor)}`,
-                      ]}
-                    />
-                    <article className="detail-card">
-                      <h4>Evidence</h4>
-                      <p>Decision source: {detail.evidence.decision_source || "-"}</p>
-                      <p>Schema version: {detail.evidence.schema_version || "-"}</p>
-                      <details className="evidence-details">
-                        <summary>View model evidence JSON</summary>
-                        <pre className="evidence-json">{serializeEvidence(detail.evidence.model_evidence || {})}</pre>
-                      </details>
-                    </article>
-                    <TimelineGroups
-                      groups={detail.timeline_groups}
-                      collapsed={selectedTimelineCollapseState}
-                      onCollapsedChange={updateSelectedTimelineCollapseState}
-                    />
-                    <DetailBlock
-                      title="Audit Trail"
-                      content={detail.audit_trail.length > 0
-                        ? detail.audit_trail.map((item) => `${formatIsoTimestamp(item.timestamp)} ${item.event_type} (${item.outcome_status.toUpperCase()})`)
-                        : ["No audit events yet."]}
-                    />
-                  </div>
-                ) : null}
               </article>
             </section>
 
             <section className="panel">
-              <h3 className="section-title">Evaluation Center</h3>
-              <p className="section-subtitle">
-                Held-out evaluation console comparing Baseline vs RecoverIQ on precision, recall, F1, false-positive cost, and recovered revenue.
-              </p>
+              <h2>Evaluation</h2>
+              <p className="panel-copy">Baseline vs RecoverIQ for precision, recall, F1, false-positive cost, and revenue recovered.</p>
 
-              <div className="filter-row evaluation-controls" style={{ marginTop: 10, gridTemplateColumns: isMobile ? "1fr" : "2fr 1fr 1fr 1fr auto" }}>
-                <div className="form-field">
-                  <label htmlFor="eval-dataset-version" className="field-label">Dataset version</label>
-                  <input id="eval-dataset-version" value={runDatasetVersion} onChange={(e) => setRunDatasetVersion(e.target.value)} placeholder="phase11_dataset" className="field" />
+              <div className="evaluation-controls">
+                <div className="field-block">
+                  <label htmlFor="dataset">Dataset version</label>
+                  <input id="dataset" className="text-input" value={runDatasetVersion} onChange={(event) => setRunDatasetVersion(event.target.value)} />
                 </div>
-                <div className="form-field">
-                  <label htmlFor="eval-split" className="field-label">Split</label>
-                  <select id="eval-split" value={runSplit} onChange={(e) => setRunSplit(e.target.value)} className="select">
+                <div className="field-block">
+                  <label htmlFor="split">Split</label>
+                  <select id="split" className="select-input" value={runSplit} onChange={(event) => setRunSplit(event.target.value)}>
                     <option value="TEST">TEST</option>
                     <option value="VALIDATION">VALIDATION</option>
                     <option value="DEVELOPMENT">DEVELOPMENT</option>
                   </select>
                 </div>
-                <div className="form-field">
-                  <label htmlFor="eval-seed" className="field-label">Generation seed</label>
-                  <input id="eval-seed" value={runGenerationSeed} onChange={(e) => setRunGenerationSeed(e.target.value)} placeholder="42" className="field" />
+                <div className="field-block">
+                  <label htmlFor="seed">Generation seed</label>
+                  <input id="seed" className="text-input" value={runGenerationSeed} onChange={(event) => setRunGenerationSeed(event.target.value)} />
                 </div>
-                <div className="form-field">
-                  <label htmlFor="eval-total-cases" className="field-label">Total cases</label>
-                  <input id="eval-total-cases" value={runTotalCases} onChange={(e) => setRunTotalCases(e.target.value)} placeholder="1000" className="field" />
+                <div className="field-block">
+                  <label htmlFor="cases">Total cases</label>
+                  <input id="cases" className="text-input" value={runTotalCases} onChange={(event) => setRunTotalCases(event.target.value)} />
                 </div>
-                <button onClick={runEvaluation} disabled={isRunSubmitting} className="btn" style={{ ...buttonStyle, opacity: isRunSubmitting ? 0.7 : 1 }}>
+                <button
+                  onClick={runEvaluation}
+                  disabled={isRunSubmitting}
+                  className="btn btn-primary"
+                  style={{ ...DEFAULT_BUTTON_STYLE, opacity: isRunSubmitting ? 0.7 : 1 }}
+                >
                   {isRunSubmitting ? "Running..." : "Run Evaluation"}
                 </button>
               </div>
 
-              <div className="eval-grid">
-                <div className="detail-card run-history-card">
-                  <h4>Run History</h4>
+              <div className="evaluation-grid">
+                <article className="evaluation-history">
+                  <h3>Run History</h3>
                   {evaluationHistory.length === 0 ? (
-                    <div className="empty-block"><p className="meta" style={{ margin: 0 }}>No evaluation runs yet.</p></div>
+                    <p className="helper-message">No evaluation runs available.</p>
                   ) : (
-                    <div className="history-list">
+                    <div className="run-list">
                       {evaluationHistory.map((item) => (
                         <button
                           key={item.evaluation_run_id}
                           onClick={() => setSelectedEvaluationRunId(item.evaluation_run_id)}
-                          className={`history-item ${item.evaluation_run_id === selectedEvaluationRunId ? "active" : ""}`}
+                          className={`run-item ${selectedEvaluationRunId === item.evaluation_run_id ? "active" : ""}`}
                         >
-                          <p style={{ margin: 0, fontWeight: 700, fontSize: 12 }}>{item.evaluation_run_id}</p>
-                          <p className="meta" style={{ marginTop: 4 }}>Records {item.records} | F1 {formatPercent(item.f1)}</p>
-                          <p className="meta" style={{ marginTop: 2 }}>{formatIsoTimestamp(item.last_created_at || null)}</p>
+                          <p>{item.evaluation_run_id}</p>
+                          <span>{`F1 ${formatPercent(item.f1)} | Records ${item.records}`}</span>
+                          <span>{formatIsoTimestamp(item.last_created_at || null)}</span>
                         </button>
                       ))}
                     </div>
                   )}
-                </div>
+                </article>
 
-                <div className="detail-card">
-                  <h4>Baseline vs RecoverIQ</h4>
-                  {isEvaluationLoading ? <p className="meta">Loading run insights...</p> : null}
-                  {!isEvaluationLoading && !selectedEvaluationRunId ? <p className="meta">Select an evaluation run to inspect results.</p> : null}
+                <article className="evaluation-main">
+                  <h3>Baseline vs RecoverIQ</h3>
+                  {isEvaluationLoading ? <p className="helper-message">Loading evaluation insights...</p> : null}
+                  {!isEvaluationLoading && !evaluationComparison ? <p className="helper-message">Select an evaluation run to inspect metrics.</p> : null}
+
                   {!isEvaluationLoading && evaluationComparison ? (
-                    <div className="detail-grid">
-                      <table className="table">
-                        <thead>
-                          <tr>
-                            <th>Metric</th>
-                            <th>Baseline</th>
-                            <th>RecoverIQ</th>
-                            <th>Delta</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          <tr>
-                            <td>Precision</td>
-                            <td>{formatPercent(evaluationComparison.baseline.precision)}</td>
-                            <td>{formatPercent(evaluationComparison.recoveriq.precision)}</td>
-                            <td className={toDeltaClass(evaluationComparison.deltas.precision_delta)}>{toDeltaLabel(evaluationComparison.deltas.precision_delta * 100)}</td>
-                          </tr>
-                          <tr>
-                            <td>Recall</td>
-                            <td>{formatPercent(evaluationComparison.baseline.recall)}</td>
-                            <td>{formatPercent(evaluationComparison.recoveriq.recall)}</td>
-                            <td className={toDeltaClass(evaluationComparison.deltas.recall_delta)}>{toDeltaLabel(evaluationComparison.deltas.recall_delta * 100)}</td>
-                          </tr>
-                          <tr>
-                            <td>F1</td>
-                            <td>{formatPercent(evaluationComparison.baseline.f1)}</td>
-                            <td>{formatPercent(evaluationComparison.recoveriq.f1)}</td>
-                            <td className={toDeltaClass(evaluationComparison.deltas.f1_delta)}>{toDeltaLabel(evaluationComparison.deltas.f1_delta * 100)}</td>
-                          </tr>
-                          <tr>
-                            <td>Recovery rate</td>
-                            <td>{formatPercent(evaluationComparison.baseline.recovery_rate)}</td>
-                            <td>{formatPercent(evaluationComparison.recoveriq.recovery_rate)}</td>
-                            <td className={toDeltaClass(evaluationComparison.deltas.recovery_rate_delta)}>{toDeltaLabel(evaluationComparison.deltas.recovery_rate_delta * 100)}</td>
-                          </tr>
-                          <tr>
-                            <td>Revenue recovered</td>
-                            <td>{formatMinorCurrency(evaluationComparison.baseline.gross_recovered_minor)}</td>
-                            <td>{formatMinorCurrency(evaluationComparison.recoveriq.gross_recovered_minor)}</td>
-                            <td className={toDeltaClass(evaluationComparison.deltas.net_recovered_minor_delta)}>{formatMinorCurrency(evaluationComparison.deltas.net_recovered_minor_delta)}</td>
-                          </tr>
-                          <tr>
-                            <td>False-positive cost</td>
-                            <td>{formatMinorCurrency(evaluationComparison.baseline.false_positive_exposure_minor)}</td>
-                            <td>{formatMinorCurrency(evaluationComparison.recoveriq.false_positive_exposure_minor)}</td>
-                            <td className={toDeltaClass(-evaluationComparison.deltas.false_positive_exposure_minor_delta)}>{formatMinorCurrency(evaluationComparison.deltas.false_positive_exposure_minor_delta)}</td>
-                          </tr>
-                        </tbody>
-                      </table>
+                    <>
+                      <div className="metric-compare-grid">
+                        <MetricCompare
+                          label="Precision"
+                          baseline={evaluationComparison.baseline.precision}
+                          recoveriq={evaluationComparison.recoveriq.precision}
+                          baselineLabel={formatPercent(evaluationComparison.baseline.precision)}
+                          recoveriqLabel={formatPercent(evaluationComparison.recoveriq.precision)}
+                        />
+                        <MetricCompare
+                          label="Recall"
+                          baseline={evaluationComparison.baseline.recall}
+                          recoveriq={evaluationComparison.recoveriq.recall}
+                          baselineLabel={formatPercent(evaluationComparison.baseline.recall)}
+                          recoveriqLabel={formatPercent(evaluationComparison.recoveriq.recall)}
+                        />
+                        <MetricCompare
+                          label="F1"
+                          baseline={evaluationComparison.baseline.f1}
+                          recoveriq={evaluationComparison.recoveriq.f1}
+                          baselineLabel={formatPercent(evaluationComparison.baseline.f1)}
+                          recoveriqLabel={formatPercent(evaluationComparison.recoveriq.f1)}
+                        />
+                        <MetricCompare
+                          label="Recovery Rate"
+                          baseline={evaluationComparison.baseline.recovery_rate}
+                          recoveriq={evaluationComparison.recoveriq.recovery_rate}
+                          baselineLabel={formatPercent(evaluationComparison.baseline.recovery_rate)}
+                          recoveriqLabel={formatPercent(evaluationComparison.recoveriq.recovery_rate)}
+                        />
+                        <MetricCompare
+                          label="Revenue Recovered"
+                          baseline={evaluationComparison.baseline.gross_recovered_minor}
+                          recoveriq={evaluationComparison.recoveriq.gross_recovered_minor}
+                          baselineLabel={formatMinorCurrency(evaluationComparison.baseline.gross_recovered_minor)}
+                          recoveriqLabel={formatMinorCurrency(evaluationComparison.recoveriq.gross_recovered_minor)}
+                          max={Math.max(evaluationComparison.baseline.gross_recovered_minor, evaluationComparison.recoveriq.gross_recovered_minor, 1)}
+                        />
+                        <MetricCompare
+                          label="False-positive Cost"
+                          baseline={evaluationComparison.baseline.false_positive_exposure_minor}
+                          recoveriq={evaluationComparison.recoveriq.false_positive_exposure_minor}
+                          baselineLabel={formatMinorCurrency(evaluationComparison.baseline.false_positive_exposure_minor)}
+                          recoveriqLabel={formatMinorCurrency(evaluationComparison.recoveriq.false_positive_exposure_minor)}
+                          max={Math.max(evaluationComparison.baseline.false_positive_exposure_minor, evaluationComparison.recoveriq.false_positive_exposure_minor, 1)}
+                          inverse
+                        />
+                      </div>
 
                       {evaluationDrilldown ? (
-                        <DetailBlock
-                          title="Drilldown"
-                          content={[
-                            `Confusion matrix TP/FP/FN/TN: ${evaluationDrilldown.confusion_matrix.tp}/${evaluationDrilldown.confusion_matrix.fp}/${evaluationDrilldown.confusion_matrix.fn}/${evaluationDrilldown.confusion_matrix.tn}`,
-                            `False positives: ${evaluationDrilldown.false_positive_cost.count}`,
-                            `False-positive exposure: ${formatMinorCurrency(evaluationDrilldown.false_positive_cost.financial_exposure_minor)}`,
-                            `False-positive intervention cost: ${formatMinorCurrency(evaluationDrilldown.false_positive_cost.intervention_cost_minor)}`,
-                            `Operational allowed/blocked/escalated/failed: ${evaluationDrilldown.operational.allowed}/${evaluationDrilldown.operational.blocked}/${evaluationDrilldown.operational.escalated}/${evaluationDrilldown.operational.failed}`,
-                          ]}
-                        />
+                        <div className="drilldown-row">
+                          <p>
+                            <strong>Confusion Matrix:</strong> TP {evaluationDrilldown.confusion_matrix.tp} | FP {evaluationDrilldown.confusion_matrix.fp} | FN {evaluationDrilldown.confusion_matrix.fn} | TN {evaluationDrilldown.confusion_matrix.tn}
+                          </p>
+                          <p>
+                            <strong>False-positive Exposure:</strong> {formatMinorCurrency(evaluationDrilldown.false_positive_cost.financial_exposure_minor)}
+                          </p>
+                        </div>
                       ) : null}
-
-                      <DetailBlock
-                        title="Attribution Deltas"
-                        content={[
-                          ...Object.entries(evaluationComparison.attribution.action_level_deltas).map(
-                            ([action, delta]) => `Action ${action}: ${delta >= 0 ? "+" : ""}${delta}`,
-                          ),
-                          ...Object.entries(evaluationComparison.attribution.policy_reason_deltas).map(
-                            ([reason, delta]) => `Policy ${reason}: ${delta >= 0 ? "+" : ""}${delta}`,
-                          ),
-                        ]}
-                      />
-                    </div>
+                    </>
                   ) : null}
-                </div>
+                </article>
               </div>
             </section>
 
-            <section className="panel">
-              <h3 className="section-title">Failure & Security Validation</h3>
-              <p className="section-subtitle">Controlled failure scenarios with explicit expected vs actual behavior.</p>
-              {failureScenarios.length === 0 ? (
-                <div className="empty-block" style={{ marginTop: 10 }}><p className="meta" style={{ margin: 0 }}>No failure scenarios loaded.</p></div>
-              ) : (
-                <div className="security-grid" style={{ marginTop: 10 }}>
-                  {failureScenarios.map((scenario) => (
-                    <article key={scenario.scenario_id} className="readiness-check">
-                      <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "start", flexWrap: "wrap" }}>
-                        <div>
-                          <h4 style={{ margin: 0, fontSize: 14 }}>{scenario.title}</h4>
-                          <p className="meta" style={{ marginTop: 4 }}>Scenario: {scenario.description}</p>
-                          <p className="meta" style={{ marginTop: 4 }}>Action: Trigger controlled failure path ({scenario.scenario_id})</p>
-                          <p className="meta" style={{ marginTop: 4 }}>Expected result: {scenario.expected_behavior || `Error code ${scenario.expected_error_code}`}</p>
-                          <p className="meta" style={{ marginTop: 4 }}>Actual result: {scenario.actual_behavior || "Available after trigger"}</p>
-                          <p className="meta" style={{ marginTop: 4 }}>
-                            Security implication: {scenario.severity.toUpperCase()} severity path must fail safely without bypassing policy controls.
-                          </p>
+            <section className="panel secondary-panel">
+              <h2>Reliability & Security</h2>
+              <p className="panel-copy">Controlled failure scenarios and readiness checks for safe operation.</p>
+
+              <div className="reliability-grid">
+                <article>
+                  <h3>Failure Scenarios</h3>
+                  {failureScenarios.length === 0 ? (
+                    <p className="helper-message">No failure scenarios available.</p>
+                  ) : (
+                    <div className="scenario-list">
+                      {failureScenarios.map((scenario) => (
+                        <div key={scenario.scenario_id} className="scenario-item">
+                          <div>
+                            <p className="row-title">{scenario.title}</p>
+                            <p className="row-subtitle">{scenario.description}</p>
+                            <p className="row-subtitle">Expected: {scenario.expected_behavior || scenario.expected_error_code}</p>
+                          </div>
+                          <button onClick={() => triggerFailureScenario(scenario.scenario_id)} className="btn btn-inline" style={DEFAULT_BUTTON_STYLE}>
+                            Trigger
+                          </button>
                         </div>
-                        <button onClick={() => triggerFailureScenario(scenario.scenario_id)} className="btn" style={buttonStyle}>
-                          Trigger
-                        </button>
-                      </div>
-                    </article>
-                  ))}
-                </div>
-              )}
-              {failureScenarioResult ? <p className="meta" style={{ marginTop: 12 }}>{failureScenarioResult}</p> : null}
-            </section>
+                      ))}
+                    </div>
+                  )}
+                  {failureScenarioResult ? <p className="helper-message">{failureScenarioResult}</p> : null}
+                </article>
 
-            <section className="panel">
-              <h3 className="section-title">Readiness Validation</h3>
-              <p className="section-subtitle">Execute acceptance workflow and capture PASS / PARTIAL / FAIL with evidence.</p>
-              <button onClick={executeReadinessValidation} disabled={isReadinessRunning} className="btn" style={{ ...buttonStyle, marginTop: 8, opacity: isReadinessRunning ? 0.7 : 1 }}>
-                {isReadinessRunning ? "Running workflow..." : "Run Readiness Workflow"}
-              </button>
+                <article>
+                  <h3>Readiness</h3>
+                  <button
+                    onClick={executeReadinessValidation}
+                    disabled={isReadinessRunning}
+                    className="btn btn-primary"
+                    style={{ ...DEFAULT_BUTTON_STYLE, opacity: isReadinessRunning ? 0.7 : 1 }}
+                  >
+                    {isReadinessRunning ? "Running workflow..." : "Run Readiness Workflow"}
+                  </button>
 
-              {readinessValidation ? (
-                <div className="detail-grid" style={{ marginTop: 12 }}>
-                  <div className="pill-row">
-                    <Badge tone={readinessValidation.status === "PASS" ? "pass" : readinessValidation.status === "FAIL" ? "fail" : "pending"} text={readinessValidation.status} />
-                    <span className="meta">Pass {readinessValidation.summary.pass_count} | Partial {readinessValidation.summary.partial_count} | Fail {readinessValidation.summary.fail_count}</span>
-                  </div>
-                  {readinessValidation.checks.map((check) => (
-                    <article key={check.id} className="readiness-check">
-                      <div className="pill-row" style={{ marginBottom: 6 }}>
-                        <Badge tone={check.status === "PASS" ? "pass" : check.status === "FAIL" ? "fail" : "pending"} text={check.status} />
-                        <strong style={{ fontSize: 13 }}>{check.id}</strong>
+                  {readinessValidation ? (
+                    <div className="readiness-list">
+                      <div className="badge-row">
+                        <Badge
+                          text={readinessValidation.status}
+                          tone={readinessValidation.status === "PASS" ? "good" : readinessValidation.status === "FAIL" ? "bad" : "warn"}
+                        />
+                        <span>{`Pass ${readinessValidation.summary.pass_count} | Partial ${readinessValidation.summary.partial_count} | Fail ${readinessValidation.summary.fail_count}`}</span>
                       </div>
-                      <p style={{ margin: "0 0 4px", color: "#334155", fontSize: 13 }}>{check.message}</p>
-                      <p className="meta" style={{ margin: 0 }}>Evidence: {serializeEvidence(check.evidence)}</p>
-                    </article>
-                  ))}
-                </div>
-              ) : null}
+                      {readinessValidation.checks.map((check) => (
+                        <div key={check.id} className="readiness-item">
+                          <div className="badge-row">
+                            <Badge text={check.status} tone={check.status === "PASS" ? "good" : check.status === "FAIL" ? "bad" : "warn"} />
+                            <strong>{check.id}</strong>
+                          </div>
+                          <p>{check.message}</p>
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
+                </article>
+              </div>
             </section>
           </>
         ) : null}
@@ -1644,136 +1505,58 @@ export function App() {
   );
 }
 
-function TimelineGroups({ groups, collapsed, onCollapsedChange }: {
-  groups: OpportunityDetail["timeline_groups"];
-  collapsed: Record<string, boolean>;
-  onCollapsedChange: (nextState: Record<string, boolean>) => void;
-}) {
-  if (groups.length === 0) {
-    return <DetailBlock title="Timeline" content={["No workflow timeline events available yet."]} />;
-  }
-
-  const totalPass = groups.reduce((sum, group) => sum + group.counts.pass, 0);
-  const totalFail = groups.reduce((sum, group) => sum + group.counts.fail, 0);
-  const totalPending = groups.reduce((sum, group) => sum + group.counts.pending, 0);
-
-  return (
-    <article className="detail-card">
-      <h4>Timeline & Workflow Events</h4>
-      <div className="pill-row" style={{ marginBottom: 8 }}>
-        <Badge tone="pass" text={`PASS ${totalPass}`} />
-        <Badge tone="fail" text={`FAIL ${totalFail}`} />
-        <Badge tone="pending" text={`PENDING ${totalPending}`} />
-        <button
-          onClick={() => {
-            const expanded: Record<string, boolean> = {};
-            groups.forEach((group) => {
-              expanded[group.group] = false;
-            });
-            onCollapsedChange(expanded);
-          }}
-          className="btn"
-          style={{ ...buttonStyle, marginLeft: "auto", padding: "4px 8px", fontSize: 11 }}
-        >
-          Expand All
-        </button>
-        <button
-          onClick={() => {
-            const allCollapsed: Record<string, boolean> = {};
-            groups.forEach((group) => {
-              allCollapsed[group.group] = true;
-            });
-            onCollapsedChange(allCollapsed);
-          }}
-          className="btn"
-          style={{ ...buttonStyle, padding: "4px 8px", fontSize: 11, background: "#475569" }}
-        >
-          Collapse All
-        </button>
-      </div>
-      <div className="detail-grid">
-        {groups.map((group) => (
-          <section key={group.group} className="readiness-check timeline-group">
-            <div className="timeline-group-header">
-              <strong style={{ fontSize: 13 }}>{group.group}</strong>
-              <Badge tone="pass" text={`PASS ${group.counts.pass}`} />
-              <Badge tone="fail" text={`FAIL ${group.counts.fail}`} />
-              <Badge tone="pending" text={`PENDING ${group.counts.pending}`} />
-              <button
-                onClick={() => onCollapsedChange({ ...collapsed, [group.group]: !collapsed[group.group] })}
-                className="btn"
-                style={{ ...buttonStyle, marginLeft: "auto", padding: "4px 8px", fontSize: 11 }}
-              >
-                {collapsed[group.group] ? "Expand" : "Collapse"}
-              </button>
-            </div>
-            {!collapsed[group.group] ? (
-              <div className="timeline-event-list">
-                {group.events.map((event, index) => (
-                  <div key={`${group.group}-${index}`} className="timeline-event-row">
-                    <Badge tone={event.outcome_status} text={event.outcome_status.toUpperCase()} />
-                    <div className="timeline-event-copy">
-                      <p className="timeline-event-title">{event.event_type}</p>
-                      <p className="meta">{formatIsoTimestamp(event.timestamp)}</p>
-                      {event.reason ? <p className="meta">Reason: {event.reason}</p> : null}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : null}
-          </section>
-        ))}
-      </div>
-    </article>
-  );
+function Badge({ text, tone }: { text: string; tone: Tone }) {
+  return <span className={`badge badge-${tone}`}>{text}</span>;
 }
 
-function Badge({ tone, text }: { tone: "pass" | "fail" | "pending" | "neutral" | "high" | "medium" | "low"; text: string }) {
-  const styleMap: Record<string, CSSProperties> = {
-    pass: { background: "#dcfce7", color: "#166534" },
-    fail: { background: "#fee2e2", color: "#991b1b" },
-    pending: { background: "#fef3c7", color: "#92400e" },
-    neutral: { background: "#e2e8f0", color: "#334155" },
-    high: { background: "#fee2e2", color: "#9f1239" },
-    medium: { background: "#ffedd5", color: "#9a3412" },
-    low: { background: "#dcfce7", color: "#166534" },
-  };
-
-  return (
-    <span
-      style={{
-        ...(styleMap[tone] || styleMap.pending),
-        borderRadius: 999,
-        padding: "2px 8px",
-        fontSize: 11,
-        fontWeight: 700,
-        display: "inline-block",
-      }}
-    >
-      {text}
-    </span>
-  );
-}
-
-function MetricCard({ title, value, context }: { title: string; value: string; context: string }) {
+function KpiCard({ title, value, note }: { title: string; value: string; note: string }) {
   return (
     <article className="kpi-card">
-      <p className="kpi-label">{title}</p>
+      <p className="kpi-title">{title}</p>
       <p className="kpi-value">{value}</p>
-      <p className="kpi-context">{context}</p>
+      <p className="kpi-note">{note}</p>
     </article>
   );
 }
 
-function DetailBlock({ title, content }: { title: string; content: string[] }) {
+function MetricCompare({
+  label,
+  baseline,
+  recoveriq,
+  baselineLabel,
+  recoveriqLabel,
+  max,
+  inverse,
+}: {
+  label: string;
+  baseline: number;
+  recoveriq: number;
+  baselineLabel: string;
+  recoveriqLabel: string;
+  max?: number;
+  inverse?: boolean;
+}) {
+  const scaleMax = max || Math.max(baseline, recoveriq, 1);
+  const baselineWidth = Math.max(6, (baseline / scaleMax) * 100);
+  const recoveriqWidth = Math.max(6, (recoveriq / scaleMax) * 100);
+  const betterIsRecoverIQ = inverse ? recoveriq <= baseline : recoveriq >= baseline;
+
   return (
-    <article className="detail-card">
-      <h4>{title}</h4>
-      {content.map((line, index) => (
-        <p key={`${title}-${index}`}>
-          {line}
-        </p>
-      ))}
-    </article>
+    <div className="metric-compare">
+      <div className="metric-compare-head">
+        <strong>{label}</strong>
+        <Badge text={betterIsRecoverIQ ? "RecoverIQ Better" : "Baseline Better"} tone={betterIsRecoverIQ ? "good" : "warn"} />
+      </div>
+      <div className="bar-row">
+        <span>Baseline</span>
+        <div className="bar-track"><div className="bar-fill baseline" style={{ width: `${baselineWidth}%` }} /></div>
+        <span>{baselineLabel}</span>
+      </div>
+      <div className="bar-row">
+        <span>RecoverIQ</span>
+        <div className="bar-track"><div className="bar-fill recoveriq" style={{ width: `${recoveriqWidth}%` }} /></div>
+        <span>{recoveriqLabel}</span>
+      </div>
+    </div>
   );
 }
