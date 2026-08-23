@@ -250,3 +250,4 @@ def test_executor_marks_attempt_failed_on_adapter_timeout(tmp_path: Path, monkey
         assert links == []
     finally:
         session.close()
+

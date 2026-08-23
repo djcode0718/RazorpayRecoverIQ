@@ -169,3 +169,4 @@ def test_demo_seed_creates_minimum_twelve_opportunities_and_duplicate_event(tmp_
     assert payload["policy_counts"]["allow"] >= 1
     assert payload["policy_counts"]["block"] >= 1
     assert payload["policy_counts"]["escalate"] >= 1
+

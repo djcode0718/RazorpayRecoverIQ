@@ -84,3 +84,4 @@ def test_phase12_redaction_guard_masks_sensitive_fields() -> None:
     assert redacted["nested"]["phone"] == "[REDACTED]"
     assert redacted["nested"]["safe"] == "ok"
     assert redacted["items"][0]["signature"] == "[REDACTED]"
+

@@ -266,7 +266,7 @@ Focused high-signal bundle (recommended when optimizing for < 1 minute):
 ```powershell
 Set-Location C:\SourceCode\RazorpayRecoverIQ
 $env:PYTHONPATH = "C:\SourceCode\RazorpayRecoverIQ\backend"
-.\.venv\Scripts\python.exe -m pytest backend\tests\test_phase7_simulation_e2e.py backend\tests\test_webhooks_phase2.py backend\tests\test_phase10_opportunity_api.py backend\tests\test_phase11_evaluation_center_api.py backend\tests\test_phase12_security_hardening.py backend\tests\test_phase13_readiness_api.py backend\tests\test_phase14_razorpay_integration_status.py -q
+.\.venv\Scripts\python.exe -m pytest backend\tests\test_recovery_workflow_end_to_end.py backend\tests\test_webhook_ingestion_idempotency.py backend\tests\test_opportunity_api_contracts.py backend\tests\test_evaluation_center_api_contracts.py backend\tests\test_security_error_envelope_and_redaction.py backend\tests\test_readiness_workflow_api.py backend\tests\test_razorpay_integration_status_api.py -q
 ```
 
 ## Troubleshooting

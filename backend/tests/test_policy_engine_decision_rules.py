@@ -139,3 +139,4 @@ def test_policy_engine_blocks_with_deterministic_reason_codes(tmp_path: Path) ->
         assert "POLICY_expected_net_FAILED" in evaluation.reason_codes["failed"]
     finally:
         session.close()
+
