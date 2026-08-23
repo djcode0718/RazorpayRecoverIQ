@@ -158,3 +158,4 @@ def test_get_payment_adapter_refuses_live_mode_credentials(tmp_path: Path) -> No
 
     with pytest.raises(PaymentAdapterConfigurationError):
         get_payment_adapter()
+

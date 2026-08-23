@@ -45,3 +45,4 @@ def test_legacy_phase13_readiness_route_remains_supported(tmp_path: Path) -> Non
     payload = response.json()
     assert payload["success"] is True
     assert payload["data"]["workflow"] == "demo_readiness_validation"
+

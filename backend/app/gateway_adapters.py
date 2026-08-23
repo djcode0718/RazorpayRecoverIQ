@@ -103,6 +103,7 @@ class PaymentLinkResult:
     reference_id: str
     status: str
     provider: str
+    short_url: str | None
     raw_response: dict[str, Any]
 
 
@@ -137,6 +138,7 @@ class SimulationPaymentAdapter(PaymentAdapter):
             reference_id=reference_id,
             status="CREATED",
             provider=self.name,
+            short_url=None,
             raw_response={
                 "mode": "simulation",
                 "amount_minor": request.amount_minor,
@@ -205,6 +207,7 @@ class RazorpayPaymentAdapter(PaymentAdapter):
             reference_id=str(data.get("reference_id") or reference_id),
             status=str(data.get("status") or "created").upper(),
             provider=self.name,
+            short_url=(str(data.get("short_url") or "").strip() or None),
             raw_response=data,
         )
 

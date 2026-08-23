@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 from app.config import get_settings
 from app.db import get_session_local, init_db, reset_db_runtime
 from app.main import create_app
-from app.models import AuditEvent, Payment, PolicyEvaluation, RecoveryAttempt, RecoveryDecision, RevenueOpportunity
+from app.models import AuditEvent, Payment, PolicyEvaluation, RecoveryAttempt, RecoveryDecision, RecoveryPaymentLink, RevenueOpportunity
 
 
 def _build_client(tmp_path: Path) -> TestClient:
@@ -147,6 +147,140 @@ def _seed_opportunity_chain() -> int:
         session.close()
 
 
+def _seed_semantic_case(
+    *,
+    suffix: str,
+    policy_result: str,
+    attempt_status: str | None = None,
+    verified_outcome: str | None = None,
+    recovered_amount_minor: int = 0,
+    attach_payment_link: bool = False,
+    duplicate_block: bool = False,
+) -> int:
+    session = get_session_local()()
+    try:
+        payment = Payment(
+            razorpay_payment_id=f"pay_sem_{suffix}",
+            razorpay_order_id=f"order_sem_{suffix}",
+            customer_id=10,
+            amount_minor=30_000,
+            currency="INR",
+            status="FAILED",
+            method="card",
+            captured=False,
+            failure_code="DECLINED",
+            failure_description="declined",
+            failure_source="gateway",
+            failure_step="authorize",
+            failure_reason="declined",
+        )
+        session.add(payment)
+        session.commit()
+        session.refresh(payment)
+
+        opportunity = RevenueOpportunity(
+            customer_id=10,
+            payment_id=payment.id,
+            order_id=None,
+            subscription_id=None,
+            source_event_id=1,
+            amount_at_risk_minor=30_000,
+            currency="INR",
+            failure_category="hard_decline",
+            failure_reason="declined",
+            recovery_probability=65,
+            recovery_score=65,
+            expected_recovery_minor=18_000,
+            estimated_intervention_cost_minor=300,
+            expected_net_recovery_minor=17_700,
+            recommended_action="CREATE_PAYMENT_LINK",
+            confidence=75,
+            status="IDENTIFIED",
+            expires_at=None,
+        )
+        session.add(opportunity)
+        session.commit()
+        session.refresh(opportunity)
+
+        decision = RecoveryDecision(
+            opportunity_id=opportunity.id,
+            diagnosis="seeded",
+            evidence={"seed": suffix},
+            recovery_probability=65,
+            confidence=75,
+            recommended_action="CREATE_PAYMENT_LINK",
+            expected_recovery_minor=18_000,
+            estimated_cost_minor=300,
+            expected_net_recovery_minor=17_700,
+            decision_source="AI",
+            provider="mock",
+            model="mock-v1",
+            model_version="mock-v1",
+            prompt_version="phase5-v1",
+            schema_version="phase5-v1",
+        )
+        session.add(decision)
+        session.commit()
+        session.refresh(decision)
+
+        policy = PolicyEvaluation(
+            opportunity_id=opportunity.id,
+            decision_id=decision.id,
+            result=policy_result,
+            reason_codes={
+                "failed": ["POLICY_duplicate_FAILED"] if duplicate_block else [],
+                "passed": ["POLICY_seed_PASSED"],
+            },
+            evaluated_rules={"seed": {"passed": True}},
+            max_amount_check=True,
+            confidence_check=True,
+            retry_limit_check=True,
+            economic_check=True,
+            duplicate_check=not duplicate_block,
+            environment_check=True,
+            policy_version="phase6-v1",
+        )
+        session.add(policy)
+        session.commit()
+        session.refresh(policy)
+
+        if attempt_status is not None:
+            attempt = RecoveryAttempt(
+                opportunity_id=opportunity.id,
+                action="CREATE_PAYMENT_LINK",
+                attempt_number=1,
+                policy_evaluation_id=policy.id,
+                status=attempt_status,
+                amount_minor=30_000,
+                currency="INR",
+                failure_code=None,
+                failure_reason=None,
+                verified_outcome=verified_outcome,
+                recovered_amount_minor=recovered_amount_minor,
+            )
+            session.add(attempt)
+            session.commit()
+            session.refresh(attempt)
+            if attach_payment_link:
+                session.add(
+                    RecoveryPaymentLink(
+                        opportunity_id=opportunity.id,
+                        recovery_attempt_id=attempt.id,
+                        payment_link_id=f"plink_sem_{suffix}",
+                        payment_link_reference_id=f"recoveriq_sem_{suffix}",
+                        amount_minor=30_000,
+                        currency="INR",
+                        status="CREATED",
+                        external_response_reference="{}",
+                    )
+                )
+                session.commit()
+
+        return opportunity.id
+    finally:
+        session.close()
+
+
 def test_phase10_opportunities_list_and_detail(tmp_path: Path) -> None:
     client = _build_client(tmp_path)
     opportunity_id = _seed_opportunity_chain()
@@ -173,8 +307,13 @@ def test_phase10_opportunities_list_and_detail(tmp_path: Path) -> None:
     assert detail_payload["data"]["policy_checks"]["checks"]["confidence_check"] is True
     assert detail_payload["data"]["policy_checks"]["checks"]["amount_check"] is True
     assert detail_payload["data"]["policy_checks"]["checks"]["expected_recovery_check"] is True
-    assert detail_payload["data"]["recovery_state"]["current"] in {"Successful", "Verified", "Recovered"}
+    assert detail_payload["data"]["recovery_state"]["current"] == "RECOVERED"
+    assert detail_payload["data"]["semantic_states"]["original_payment"] == "ORIGINAL_PAYMENT_FAILED"
+    assert detail_payload["data"]["semantic_states"]["recovery_payment"] == "RECOVERY_PAYMENT_SUCCESS"
+    assert detail_payload["data"]["semantic_states"]["verification"] == "RECOVERY_OUTCOME_VERIFIED"
+    assert detail_payload["data"]["semantic_states"]["business_outcome"] == "RECOVERED"
     assert detail_payload["data"]["action_traceability"]["latest_verified_outcome"] == "VERIFIED_SUCCESS"
+    assert detail_payload["data"]["economics"]["gross_recovered_minor"] == 8_000
     assert len(detail_payload["data"]["timeline"]) == 2
     assert len(detail_payload["data"]["audit_trail"]) == 2
     assert detail_payload["data"]["timeline"][0]["stage"] == "detection"
@@ -323,6 +462,73 @@ def test_phase10_cursor_pagination_rejects_invalid_cursor(tmp_path: Path) -> Non
     assert payload["error"]["code"] == "INVALID_CURSOR"
 
 
+def test_phase10_semantic_states_for_success_failure_pending_duplicate_blocked_and_escalated(tmp_path: Path) -> None:
+    client = _build_client(tmp_path)
+
+    success_id = _seed_semantic_case(
+        suffix="success",
+        policy_result="ALLOW",
+        attempt_status="VERIFIED",
+        verified_outcome="VERIFIED_SUCCESS",
+        recovered_amount_minor=11_000,
+        attach_payment_link=True,
+    )
+    failed_id = _seed_semantic_case(
+        suffix="failed",
+        policy_result="ALLOW",
+        attempt_status="VERIFIED",
+        verified_outcome="VERIFIED_FAILURE",
+        recovered_amount_minor=0,
+        attach_payment_link=True,
+    )
+    pending_id = _seed_semantic_case(
+        suffix="pending",
+        policy_result="ALLOW",
+        attempt_status="EXECUTED",
+        verified_outcome=None,
+        recovered_amount_minor=0,
+        attach_payment_link=True,
+    )
+    blocked_id = _seed_semantic_case(
+        suffix="blocked",
+        policy_result="BLOCK",
+        attempt_status=None,
+        duplicate_block=True,
+    )
+    escalated_id = _seed_semantic_case(
+        suffix="escalated",
+        policy_result="ESCALATE",
+        attempt_status=None,
+    )
+
+    success_detail = client.get(f"/api/v1/opportunities/{success_id}").json()["data"]
+    assert success_detail["semantic_states"]["recovery_payment"] == "RECOVERY_PAYMENT_SUCCESS"
+    assert success_detail["semantic_states"]["verification"] == "RECOVERY_OUTCOME_VERIFIED"
+    assert success_detail["semantic_states"]["business_outcome"] == "RECOVERED"
+    assert success_detail["economics"]["gross_recovered_minor"] == 11_000
+
+    failed_detail = client.get(f"/api/v1/opportunities/{failed_id}").json()["data"]
+    assert failed_detail["semantic_states"]["recovery_payment"] == "RECOVERY_PAYMENT_FAILED"
+    assert failed_detail["semantic_states"]["verification"] == "RECOVERY_OUTCOME_VERIFIED"
+    assert failed_detail["semantic_states"]["business_outcome"] == "NOT_RECOVERED"
+    assert failed_detail["economics"]["gross_recovered_minor"] == 0
+
+    pending_detail = client.get(f"/api/v1/opportunities/{pending_id}").json()["data"]
+    assert pending_detail["semantic_states"]["payment_link"] == "PAYMENT_LINK_CREATED"
+    assert pending_detail["semantic_states"]["recovery_payment"] == "RECOVERY_PAYMENT_PENDING"
+    assert pending_detail["semantic_states"]["business_outcome"] == "NOT_RECOVERED"
+    assert pending_detail["economics"]["gross_recovered_minor"] == 0
+
+    blocked_detail = client.get(f"/api/v1/opportunities/{blocked_id}").json()["data"]
+    assert blocked_detail["semantic_states"]["policy"] == "POLICY_BLOCKED"
+    assert blocked_detail["semantic_states"]["business_outcome"] == "NOT_RECOVERED"
+    assert "POLICY_duplicate_FAILED" in blocked_detail["policy_checks"]["reason_codes"]["failed"]
+
+    escalated_detail = client.get(f"/api/v1/opportunities/{escalated_id}").json()["data"]
+    assert escalated_detail["semantic_states"]["policy"] == "ESCALATED"
+    assert escalated_detail["semantic_states"]["business_outcome"] == "NOT_RECOVERED"
+
+
 def test_phase10_opportunity_detail_not_found(tmp_path: Path) -> None:
     client = _build_client(tmp_path)
     response = client.get("/api/v1/opportunities/999999")
@@ -364,3 +570,4 @@ def test_phase10_opportunity_evaluate_execute_explanation_and_audit(tmp_path: Pa
     audit_payload = audit_response.json()
     assert audit_payload["success"] is True
     assert "items" in audit_payload["data"]
+

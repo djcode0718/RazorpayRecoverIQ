@@ -197,3 +197,4 @@ def test_phase7_policy_block_still_persists_chain_and_blocks_execution(tmp_path:
         assert execution_audits[0].outcome_snapshot["status"] == "blocked_by_policy"
     finally:
         session.close()
+

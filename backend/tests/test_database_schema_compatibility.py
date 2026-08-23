@@ -115,3 +115,4 @@ def test_init_db_heals_missing_audit_events_columns(tmp_path: Path) -> None:
         assert saved.metadata_json == {"k": "v"}
     finally:
         session.close()
+

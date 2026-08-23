@@ -240,3 +240,4 @@ def test_dashboard_summary_mode_reflects_razorpay_test(tmp_path: Path) -> None:
     payload = response.json()
     assert payload["data"]["mode"] == "razorpay_test"
     assert payload["data"]["mode_label"] == "Razorpay Test Mode"
+

@@ -51,3 +51,4 @@ def test_registry_rejects_unknown_provider() -> None:
         get_provider("does-not-exist")
 
 
+

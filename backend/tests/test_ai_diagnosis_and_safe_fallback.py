@@ -134,3 +134,4 @@ def test_schema_validation_failure_escalates_safely(tmp_path: Path, monkeypatch)
         assert "ai_diagnosis_failed" in (audits[0].reason or "")
     finally:
         session.close()
+

@@ -220,3 +220,4 @@ def test_verifier_marks_failure_with_zero_recovery(tmp_path: Path) -> None:
         assert verified.recovered_amount_minor == 0
     finally:
         session.close()
+

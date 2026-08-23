@@ -343,6 +343,45 @@ def process_razorpay_webhook_gateway(
     header_event_id: str | None = None,
 ) -> tuple[int, dict[str, Any]]:
     correlation_id = str(uuid.uuid4())
+    header_event_id = (header_event_id or "").strip() or None
+
+    signature_valid = verify_razorpay_signature(raw_body, signature, webhook_secret)
+    if not signature_valid:
+        unverified_event_id = header_event_id or f"unverified_{correlation_id}"
+        persist_webhook_event(
+            db,
+            event_id=unverified_event_id,
+            event_type="unknown",
+            account_id=None,
+            signature_valid=False,
+            raw_body=raw_body,
+            processing_status="invalid_signature",
+            processing_error="signature_verification_failed",
+            processed=False,
+            correlation_id=correlation_id,
+        )
+        _write_audit_event(
+            db,
+            event_type="webhook.invalid_signature",
+            entity_id=unverified_event_id,
+            correlation_id=correlation_id,
+            reason="signature_verification_failed",
+            input_snapshot={"header_event_id": header_event_id, "raw_body_size": len(raw_body)},
+            outcome_snapshot={"status_code": 401, "signature_valid": False},
+        )
+        _record_processor_ledger(
+            db,
+            event_id=unverified_event_id,
+            event_type="unknown",
+            event_created_at=None,
+            correlation_id=correlation_id,
+            processing_status="invalid_signature",
+            processing_error="signature_verification_failed",
+        )
+        return 401, {
+            "success": False,
+            "error": {"code": "INVALID_SIGNATURE", "message": "Webhook signature verification failed."},
+        }
 
     try:
         payload = json.loads(raw_body.decode("utf-8"))
@@ -362,7 +401,6 @@ def process_razorpay_webhook_gateway(
         }
 
     payload_event_id = payload.get("id")
-    header_event_id = (header_event_id or "").strip() or None
     if isinstance(payload_event_id, str) and payload_event_id.strip():
         event_id = payload_event_id.strip()
     elif header_event_id is not None:
@@ -439,42 +477,6 @@ def process_razorpay_webhook_gateway(
             },
         }
 
-    signature_valid = verify_razorpay_signature(raw_body, signature, webhook_secret)
-    if not signature_valid:
-        persist_webhook_event(
-            db,
-            event_id=event_id,
-            event_type=event_type,
-            account_id=account_id,
-            signature_valid=False,
-            raw_body=raw_body,
-            processing_status="invalid_signature",
-            processing_error="signature_verification_failed",
-            processed=False,
-            correlation_id=correlation_id,
-        )
-        _write_audit_event(
-            db,
-            event_type="webhook.invalid_signature",
-            entity_id=event_id,
-            correlation_id=correlation_id,
-            reason="signature_verification_failed",
-            input_snapshot={"event_type": event_type, "account_id": account_id},
-            outcome_snapshot={"status_code": 401, "signature_valid": False},
-        )
-        _record_processor_ledger(
-            db,
-            event_id=event_id,
-            event_type=event_type,
-            event_created_at=event_created_at,
-            correlation_id=correlation_id,
-            processing_status="invalid_signature",
-            processing_error="signature_verification_failed",
-        )
-        return 401, {
-            "success": False,
-            "error": {"code": "INVALID_SIGNATURE", "message": "Webhook signature verification failed."},
-        }
 
     status, error = process_webhook_payload(db, payload)
 

@@ -136,3 +136,4 @@ def test_adapter_integration_rejects_when_retrieval_missing(tmp_path: Path) -> N
         assert payment.status == "FAILED"
     finally:
         session.close()
+
