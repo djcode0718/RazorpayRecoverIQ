@@ -394,6 +394,15 @@ function formatPercent(decimalFraction: number): string {
   return `${(decimalFraction * 100).toFixed(1)}%`;
 }
 
+function formatConfidencePercent(confidenceValue: number): string {
+  if (!Number.isFinite(confidenceValue)) {
+    return "-";
+  }
+  const scaled = confidenceValue <= 1 ? confidenceValue * 100 : confidenceValue;
+  const rounded = Math.round(scaled * 10) / 10;
+  return Number.isInteger(rounded) ? `${rounded.toFixed(0)}%` : `${rounded.toFixed(1)}%`;
+}
+
 function formatIsoTimestamp(input: string | null): string {
   if (!input) {
     return "-";
@@ -758,6 +767,8 @@ export function App() {
   };
 
   const triggerFailureScenario = async (scenarioId: string) => {
+    const scenarioMeta = failureScenarios.find((scenario) => scenario.scenario_id === scenarioId);
+    const expectedCode = scenarioMeta?.expected_error_code || null;
     const response = await fetch("/api/v1/failure-demos/trigger", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -768,9 +779,13 @@ export function App() {
       setFailureScenarioResult(`Scenario ${scenarioId} returned success response.`);
       return;
     }
-    setFailureScenarioResult(
-      `Scenario ${scenarioId} -> ${payload.error?.code || "ERROR"}: ${payload.error?.message || "Request failed."}`,
-    );
+    const actualCode = payload.error?.code || "ERROR";
+    const actualMessage = payload.error?.message || "Request failed.";
+    if (expectedCode && actualCode === expectedCode) {
+      setFailureScenarioResult(`Scenario ${scenarioId} -> PASS (expected ${expectedCode}, HTTP ${response.status}): ${actualMessage}`);
+      return;
+    }
+    setFailureScenarioResult(`Scenario ${scenarioId} -> UNEXPECTED (${actualCode}, HTTP ${response.status})` + (expectedCode ? ` expected ${expectedCode}` : "") + `: ${actualMessage}`);
   };
 
   const executeReadinessValidation = async () => {
@@ -1147,7 +1162,7 @@ export function App() {
                                 </td>
                                 <td>
                                   <div className="badge-row">
-                                    <Badge text={formatPercent(item.confidence)} tone={toToneForRisk(item.risk_bucket)} />
+                                    <Badge text={formatConfidencePercent(item.confidence)} tone={toToneForRisk(item.risk_bucket)} />
                                   </div>
                                 </td>
                                 <td>
@@ -1508,7 +1523,7 @@ export function App() {
                       <h3>AI Explanation</h3>
                       <p><strong>Diagnosis:</strong> {detail.evidence.diagnosis || "-"}</p>
                       <p><strong>Evidence:</strong> {detail.evidence.decision_source || "Model signal unavailable"}</p>
-                      <p><strong>Confidence:</strong> {formatPercent(detail.opportunity.confidence)}</p>
+                      <p><strong>Confidence:</strong> {formatConfidencePercent(detail.opportunity.confidence)}</p>
                       <p><strong>Recommended Action:</strong> {detail.action_traceability.recommended_action || "-"}</p>
                     </article>
 

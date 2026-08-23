@@ -169,4 +169,35 @@ def test_demo_seed_creates_minimum_twelve_opportunities_and_duplicate_event(tmp_
     assert payload["policy_counts"]["allow"] >= 1
     assert payload["policy_counts"]["block"] >= 1
     assert payload["policy_counts"]["escalate"] >= 1
+    assert payload["demo_story"]["failed_payments"] >= 1
+    assert payload["demo_story"]["recoverable_opportunities"] >= 1
+    assert payload["demo_story"]["blocked_opportunities"] >= 1
+    assert payload["demo_story"]["escalated_opportunities"] >= 1
+    assert payload["demo_story"]["failed_recoveries"] >= 1
+    assert payload["demo_story"]["successful_recoveries"] >= 1
+    assert payload["demo_story"]["primary_recovery_opportunity_id"] is not None
+    assert payload["demo_story"]["blocked_opportunity_id"] is not None
+    assert payload["demo_story"]["escalated_opportunity_id"] is not None
+
+
+def test_demo_seed_is_repeatable_after_reset(tmp_path: Path) -> None:
+    client, _ = _build_client(tmp_path)
+
+    first = client.post("/api/v1/demo/seed-core-recovery")
+    assert first.status_code == 200
+    first_data = first.json()["data"]
+
+    reset = client.post("/api/v1/demo/reset-core-recovery")
+    assert reset.status_code == 200
+    assert reset.json()["data"]["status"] == "reset"
+
+    second = client.post("/api/v1/demo/seed-core-recovery")
+    assert second.status_code == 200
+    second_data = second.json()["data"]
+
+    assert second_data["seeded_opportunities"] == first_data["seeded_opportunities"]
+    assert second_data["policy_counts"] == first_data["policy_counts"]
+    assert second_data["verified_recovered_minor"] == first_data["verified_recovered_minor"]
+    assert second_data["duplicate_events"] == first_data["duplicate_events"]
+    assert second_data["demo_story"] == first_data["demo_story"]
 

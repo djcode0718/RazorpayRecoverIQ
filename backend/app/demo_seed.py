@@ -206,10 +206,46 @@ def seed_core_recovery_demo(db: Session) -> dict[str, Any]:
         "escalate": db.query(PolicyEvaluation).filter(PolicyEvaluation.result == "ESCALATE").count(),
     }
 
+    failed_payments = db.query(Payment).filter(Payment.status == "FAILED").count()
+    successful_recoveries = db.query(RecoveryAttempt).filter(RecoveryAttempt.verified_outcome == "VERIFIED_SUCCESS").count()
+    failed_recoveries = db.query(RecoveryAttempt).filter(RecoveryAttempt.verified_outcome == "VERIFIED_FAILURE").count()
+
+    primary_recovery_opportunity = db.execute(
+        select(RevenueOpportunity)
+        .join(PolicyEvaluation, PolicyEvaluation.opportunity_id == RevenueOpportunity.id)
+        .where(PolicyEvaluation.result == "ALLOW")
+        .order_by(RevenueOpportunity.id.asc())
+    ).scalars().first()
+
+    blocked_opportunity = db.execute(
+        select(RevenueOpportunity)
+        .join(PolicyEvaluation, PolicyEvaluation.opportunity_id == RevenueOpportunity.id)
+        .where(PolicyEvaluation.result == "BLOCK")
+        .order_by(RevenueOpportunity.id.asc())
+    ).scalars().first()
+
+    escalated_opportunity = db.execute(
+        select(RevenueOpportunity)
+        .join(PolicyEvaluation, PolicyEvaluation.opportunity_id == RevenueOpportunity.id)
+        .where(PolicyEvaluation.result == "ESCALATE")
+        .order_by(RevenueOpportunity.id.asc())
+    ).scalars().first()
+
     return {
         "seeded_opportunities": total_opportunities,
         "policy_counts": policy_counts,
         "verified_recovered_minor": recovered_sum,
         "duplicate_events": len([item for item in webhook_results if item.get("duplicate")]),
+        "demo_story": {
+            "failed_payments": failed_payments,
+            "recoverable_opportunities": policy_counts["allow"],
+            "blocked_opportunities": policy_counts["block"],
+            "escalated_opportunities": policy_counts["escalate"],
+            "failed_recoveries": failed_recoveries,
+            "successful_recoveries": successful_recoveries,
+            "primary_recovery_opportunity_id": primary_recovery_opportunity.id if primary_recovery_opportunity else None,
+            "blocked_opportunity_id": blocked_opportunity.id if blocked_opportunity else None,
+            "escalated_opportunity_id": escalated_opportunity.id if escalated_opportunity else None,
+        },
         "webhook_results": webhook_results,
     }
