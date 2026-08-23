@@ -34,6 +34,7 @@ type OpportunityListItem = {
   policy_result: string | null;
   latest_attempt_status: string | null;
   latest_verified_outcome: string | null;
+  business_outcome_status?: string | null;
   updated_at: string | null;
 };
 
@@ -106,6 +107,18 @@ type OpportunityDetail = {
     latest_attempt_status: string | null;
     latest_verified_outcome: string | null;
     attempt_count: number;
+  };
+  semantic_states?: {
+    original_payment: string | null;
+    opportunity: string | null;
+    ai: string | null;
+    recommendation: string | null;
+    policy: string | null;
+    attempt: string | null;
+    payment_link: string | null;
+    recovery_payment: string | null;
+    verification: string | null;
+    business_outcome: string | null;
   };
   recovery_state: {
     current: string;
@@ -1222,7 +1235,8 @@ export function App() {
                                 <p className="meta" style={{ marginTop: 4 }}>{item.recommended_action || "NO_ACTION"}</p>
                               </td>
                               <td>
-                                <Badge tone={toOutcomeTone(item.latest_verified_outcome || item.latest_attempt_status || item.status)} text={item.status} />
+                                <Badge tone={toOutcomeTone(item.business_outcome_status || item.latest_verified_outcome || item.latest_attempt_status || item.status)} text={item.business_outcome_status || item.status} />
+                                <p className="meta" style={{ marginTop: 4 }}>Opportunity: {item.status}</p>
                               </td>
                               <td>
                                 <span className="meta">{formatIsoTimestamp(item.updated_at)}</span>
@@ -1334,21 +1348,12 @@ export function App() {
                     <article className="detail-card">
                       <h4>Recovery Journey</h4>
                       <div className="stage-flow">
-                        {[
-                          "Payment Failed",
-                          "Revenue Opportunity",
-                          "AI Diagnosis",
-                          "Policy Decision",
-                          "Recovery Action",
-                          "Payment",
-                          "Verification",
-                          "Recovered",
-                        ].map((step) => {
-                          const reached = detail.recovery_state.stages.some((stage) => stage.reached && stage.name.toLowerCase().includes(step.toLowerCase().split(" ")[0]));
-                          const active = detail.recovery_state.current.toLowerCase().includes(step.toLowerCase().split(" ")[0]);
+                        {detail.recovery_state.stages.map((stage) => {
+                          const reached = stage.reached;
+                          const active = detail.recovery_state.current === stage.name;
                           return (
-                            <div key={step} className={`stage-node ${reached ? "reached" : ""} ${active ? "active" : ""}`}>
-                              <p className="stage-label">{step}</p>
+                            <div key={stage.name} className={`stage-node ${reached ? "reached" : ""} ${active ? "active" : ""}`}>
+                              <p className="stage-label">{stage.name}</p>
                               <p className="stage-value">{active ? "Current" : reached ? "Reached" : "Pending"}</p>
                             </div>
                           );
@@ -1380,9 +1385,11 @@ export function App() {
                       <DetailBlock
                         title="Actual Payment Outcome"
                         content={[
-                          `Payment status: ${detail.payment?.status || "-"}`,
-                          `Latest attempt status: ${detail.action_traceability.latest_attempt_status || "-"}`,
-                          `Verified outcome: ${detail.action_traceability.latest_verified_outcome || "-"}`,
+                          `Original payment: ${detail.semantic_states?.original_payment || detail.payment?.status || "-"}`,
+                          `Recovery attempt: ${detail.semantic_states?.attempt || detail.action_traceability.latest_attempt_status || "-"}`,
+                          `Recovery payment: ${detail.semantic_states?.recovery_payment || "-"}`,
+                          `Verified outcome: ${detail.semantic_states?.verification || detail.action_traceability.latest_verified_outcome || "-"}`,
+                          `Business outcome: ${detail.semantic_states?.business_outcome || "NOT_RECOVERED"}`,
                           `Gross recovered: ${formatMinorCurrency(detail.economics.gross_recovered_minor)}`,
                           `Net recovered: ${formatMinorCurrency(detail.economics.net_recovered_minor)}`,
                         ]}

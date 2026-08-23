@@ -123,6 +123,17 @@ def _serialize_opportunity_list_item(
         if isinstance(evidence_bucket, str) and evidence_bucket.strip():
             risk_bucket = evidence_bucket.strip().lower()
 
+    business_outcome = None
+    if latest_attempt is not None:
+        if latest_attempt.verified_outcome == "VERIFIED_SUCCESS" and latest_attempt.recovered_amount_minor > 0:
+            business_outcome = "RECOVERED"
+        elif latest_attempt.verified_outcome == "VERIFIED_FAILURE":
+            business_outcome = "NOT_RECOVERED"
+        elif latest_attempt.status in {"REQUESTED", "EXECUTED", "PENDING", "PENDING_VERIFICATION", "VERIFICATION_PENDING"}:
+            business_outcome = "RECOVERY_PAYMENT_PENDING"
+    if business_outcome is None and policy_evaluation is not None and policy_evaluation.result in {"BLOCK", "ESCALATE"}:
+        business_outcome = "NOT_RECOVERED"
+
     return {
         "id": opportunity.id,
         "customer_reference": f"CUST-{opportunity.customer_id}" if opportunity.customer_id is not None else "UNKNOWN",
@@ -139,6 +150,7 @@ def _serialize_opportunity_list_item(
         "policy_result": policy_evaluation.result if policy_evaluation else None,
         "latest_attempt_status": latest_attempt.status if latest_attempt else None,
         "latest_verified_outcome": latest_attempt.verified_outcome if latest_attempt else None,
+        "business_outcome_status": business_outcome,
         "updated_at": opportunity.updated_at.isoformat() if opportunity.updated_at else None,
     }
 
@@ -254,6 +266,77 @@ def _policy_checks_from_evaluation(policy: PolicyEvaluation | None) -> dict:
     }
 
 
+def _verified_success_amount(attempt: RecoveryAttempt) -> int:
+    if attempt.verified_outcome == "VERIFIED_SUCCESS" and attempt.recovered_amount_minor > 0:
+        return int(attempt.recovered_amount_minor)
+    return 0
+
+
+def _derive_semantic_states(
+    *,
+    payment: Payment | None,
+    decision: RecoveryDecision | None,
+    policy: PolicyEvaluation | None,
+    attempts: list[RecoveryAttempt],
+    has_payment_link: bool,
+) -> dict[str, str | None]:
+    latest_attempt = attempts[-1] if attempts else None
+
+    original_payment_state = None
+    if payment is not None:
+        if payment.status == "FAILED":
+            original_payment_state = "ORIGINAL_PAYMENT_FAILED"
+        else:
+            original_payment_state = f"ORIGINAL_PAYMENT_{str(payment.status or 'UNKNOWN').upper()}"
+
+    policy_state = None
+    if policy is not None:
+        if policy.result == "ALLOW":
+            policy_state = "POLICY_ALLOWED"
+        elif policy.result == "ESCALATE":
+            policy_state = "ESCALATED"
+        else:
+            policy_state = "POLICY_BLOCKED"
+
+    recovery_payment_state = None
+    verification_state = None
+    business_outcome_state = None
+    if latest_attempt is not None:
+        if latest_attempt.verified_outcome == "VERIFIED_SUCCESS":
+            recovery_payment_state = "RECOVERY_PAYMENT_SUCCESS"
+            verification_state = "RECOVERY_OUTCOME_VERIFIED"
+            business_outcome_state = "RECOVERED"
+        elif latest_attempt.verified_outcome == "VERIFIED_FAILURE":
+            recovery_payment_state = "RECOVERY_PAYMENT_FAILED"
+            verification_state = "RECOVERY_OUTCOME_VERIFIED"
+            business_outcome_state = "NOT_RECOVERED"
+        elif latest_attempt.status in {"REQUESTED", "EXECUTED", "PENDING", "PENDING_VERIFICATION", "VERIFICATION_PENDING"}:
+            recovery_payment_state = "RECOVERY_PAYMENT_PENDING"
+        elif has_payment_link:
+            recovery_payment_state = "RECOVERY_PAYMENT_PENDING"
+
+    if business_outcome_state is None and (
+        latest_attempt is not None
+        or has_payment_link
+        or policy_state in {"POLICY_BLOCKED", "ESCALATED", "POLICY_ALLOWED"}
+        or decision is not None
+    ):
+        business_outcome_state = "NOT_RECOVERED"
+
+    return {
+        "original_payment": original_payment_state,
+        "opportunity": "OPPORTUNITY_IDENTIFIED",
+        "ai": "AI_ANALYZED" if decision is not None else None,
+        "recommendation": "RECOVERY_RECOMMENDED" if decision is not None else None,
+        "policy": policy_state,
+        "attempt": "RECOVERY_ATTEMPT_CREATED" if latest_attempt is not None else None,
+        "payment_link": "PAYMENT_LINK_CREATED" if has_payment_link else None,
+        "recovery_payment": recovery_payment_state,
+        "verification": verification_state,
+        "business_outcome": business_outcome_state,
+    }
+
+
 def _latest_decision_for_opportunity(db: Session, opportunity_id: int) -> RecoveryDecision | None:
     return db.execute(
         select(RecoveryDecision)
@@ -300,9 +383,15 @@ def dashboard_summary(db: Session = Depends(get_db), settings: Settings = Depend
         select(func.count(RecoveryDecision.id)).where(RecoveryDecision.recommended_action == "ESCALATE")
     ).scalar_one()
 
-    attempts = db.execute(select(RecoveryAttempt.action, RecoveryAttempt.recovered_amount_minor)).all()
+    attempts = db.execute(
+        select(RecoveryAttempt.action, RecoveryAttempt.recovered_amount_minor, RecoveryAttempt.verified_outcome)
+    ).all()
     recovery_attempts = len(attempts)
-    gross_recovered_minor = sum(row.recovered_amount_minor for row in attempts)
+    gross_recovered_minor = sum(
+        int(row.recovered_amount_minor)
+        for row in attempts
+        if str(row.verified_outcome or "") == "VERIFIED_SUCCESS" and int(row.recovered_amount_minor or 0) > 0
+    )
     intervention_cost_minor = sum(estimate_intervention_cost_minor(row.action) for row in attempts)
     net_recovered_minor = gross_recovered_minor - intervention_cost_minor
 
@@ -584,11 +673,11 @@ def get_opportunity_detail(opportunity_id: int, db: Session = Depends(get_db)):
             .order_by(PolicyEvaluation.evaluated_at.desc(), PolicyEvaluation.id.desc())
         ).scalars().first()
 
-    attempts = db.execute(
+    attempts = list(db.execute(
         select(RecoveryAttempt)
         .where(RecoveryAttempt.opportunity_id == opportunity.id)
         .order_by(RecoveryAttempt.attempt_number.asc(), RecoveryAttempt.id.asc())
-    ).scalars().all()
+    ).scalars().all())
     attempt_ids = [attempt.id for attempt in attempts]
     links = (
         db.execute(select(RecoveryPaymentLink).where(RecoveryPaymentLink.recovery_attempt_id.in_(attempt_ids))).scalars().all()
@@ -624,57 +713,47 @@ def get_opportunity_detail(opportunity_id: int, db: Session = Depends(get_db)):
         ).scalars().all()
         )
 
-    gross_recovered_minor = sum(attempt.recovered_amount_minor for attempt in attempts)
+    gross_recovered_minor = sum(_verified_success_amount(attempt) for attempt in attempts)
     total_intervention_cost_minor = sum(estimate_intervention_cost_minor(attempt.action) for attempt in attempts)
 
     timeline = _timeline_from_audits(workflow_audits)
     timeline_groups = _group_timeline(timeline)
 
-    has_recommendation = bool((decision.recommended_action if decision else opportunity.recommended_action))
-    approved = bool(policy is not None and policy.result == "ALLOW")
     has_payment_link = any(attempt.id in link_by_attempt_id for attempt in attempts)
-    pending = any(attempt.status in {"PENDING", "IN_PROGRESS", "REQUESTED"} for attempt in attempts)
-    successful = any(
-        (attempt.verified_outcome == "VERIFIED_SUCCESS") or (attempt.recovered_amount_minor > 0)
-        for attempt in attempts
-    )
-    verified = any(
-        (attempt.verified_outcome or "").startswith("VERIFIED")
-        for attempt in attempts
-    )
-    recovered = any(
-        (attempt.verified_outcome == "VERIFIED_SUCCESS") and attempt.recovered_amount_minor > 0
-        for attempt in attempts
+    semantic_states = _derive_semantic_states(
+        payment=payment,
+        decision=decision,
+        policy=policy,
+        attempts=attempts,
+        has_payment_link=has_payment_link,
     )
 
+    ordered_states = [
+        "ORIGINAL_PAYMENT_FAILED",
+        "OPPORTUNITY_IDENTIFIED",
+        "AI_ANALYZED",
+        "RECOVERY_RECOMMENDED",
+        "POLICY_ALLOWED",
+        "POLICY_BLOCKED",
+        "ESCALATED",
+        "RECOVERY_ATTEMPT_CREATED",
+        "PAYMENT_LINK_CREATED",
+        "RECOVERY_PAYMENT_PENDING",
+        "RECOVERY_PAYMENT_SUCCESS",
+        "RECOVERY_PAYMENT_FAILED",
+        "RECOVERY_OUTCOME_VERIFIED",
+        "RECOVERED",
+        "NOT_RECOVERED",
+    ]
+    reached_states = set(filter(None, semantic_states.values()))
+    current_state = "OPPORTUNITY_IDENTIFIED"
+    for state_name in ordered_states:
+        if state_name in reached_states:
+            current_state = state_name
+
     recovery_state = {
-        "current": (
-            "Recovered"
-            if recovered
-            else "Verified"
-            if verified
-            else "Successful"
-            if successful
-            else "Pending"
-            if pending
-            else "Payment Link Created"
-            if has_payment_link
-            else "Approved"
-            if approved
-            else "Recommended"
-            if has_recommendation
-            else "Opportunity"
-        ),
-        "stages": [
-            {"name": "Opportunity", "reached": True},
-            {"name": "Recommended", "reached": has_recommendation},
-            {"name": "Approved", "reached": approved},
-            {"name": "Payment Link Created", "reached": has_payment_link},
-            {"name": "Pending", "reached": pending},
-            {"name": "Successful", "reached": successful},
-            {"name": "Verified", "reached": verified},
-            {"name": "Recovered", "reached": recovered},
-        ],
+        "current": current_state,
+        "stages": [{"name": state_name, "reached": state_name in reached_states} for state_name in ordered_states],
     }
 
     customer_history = {
@@ -749,6 +828,7 @@ def get_opportunity_detail(opportunity_id: int, db: Session = Depends(get_db)):
             "latest_verified_outcome": attempts[-1].verified_outcome if attempts else None,
             "attempt_count": len(attempts),
         },
+        "semantic_states": semantic_states,
         "recovery_state": recovery_state,
         "attempts": [
             {
