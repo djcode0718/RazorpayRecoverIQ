@@ -495,6 +495,15 @@ export function App() {
   const [razorpayStatus, setRazorpayStatus] = useState<RazorpayStatusResponse["data"] | null>(null);
   const [demoMutationMessage, setDemoMutationMessage] = useState<string>("");
   const [isDemoMutating, setIsDemoMutating] = useState<boolean>(false);
+  const [activeTab, setActiveTab] = useState<"command" | "opportunities" | "evaluation" | "failures" | "readiness">("command");
+  const [expandedScenarios, setExpandedScenarios] = useState<Record<string, boolean>>({});
+
+  const toggleScenarioExpanded = (scenarioId: string) => {
+    setExpandedScenarios((prev) => ({
+      ...prev,
+      [scenarioId]: !prev[scenarioId],
+    }));
+  };
 
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
@@ -962,7 +971,29 @@ export function App() {
 
         {!isLoading && !error && summary ? (
           <>
-            <section className="panel mode-banner">
+            <nav className="tab-navigation">
+              {(
+                [
+                  { id: "command", label: "Command Center" },
+                  { id: "opportunities", label: "Opportunities" },
+                  { id: "evaluation", label: "Evaluation" },
+                  { id: "failures", label: "Failure Demos" },
+                  { id: "readiness", label: "Readiness" },
+                ] as const
+              ).map((tab) => (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
+                  className={`tab-btn ${activeTab === tab.id ? "active" : ""}`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </nav>
+
+            {activeTab === "command" && (
+              <>
+                <section className="panel mode-banner">
               <div>
                 <h2 className="section-title" style={{ marginBottom: 6 }}>Operating Mode</h2>
                 <p className="section-subtitle" style={{ marginTop: 0 }}>
@@ -1013,8 +1044,11 @@ export function App() {
                 <Badge tone="pending" text={`ESCALATED ${summary.escalated_actions ?? summary.escalations}`} />
               </div>
             </section>
+          </>
+        )}
 
-            <section className="workspace-grid">
+        {activeTab === "opportunities" && (
+          <section className={`workspace-grid ${selectedOpportunityId === null ? "workspace-grid-full" : ""}`}>
               <article className="panel opportunities-panel">
                 <h3 className="section-title">Opportunities</h3>
                 <p className="section-subtitle">Prioritize by risk, expected recovery, confidence, and policy outcome.</p>
@@ -1297,7 +1331,18 @@ export function App() {
               </article>
 
               <article className="panel detail-panel">
-                <h3 className="section-title">Opportunity Detail & Explainability</h3>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+                  <h3 className="section-title" style={{ margin: 0 }}>Opportunity Detail & Explainability</h3>
+                  {selectedOpportunityId !== null && (
+                    <button
+                      onClick={() => setSelectedOpportunityId(null)}
+                      className="btn btn-secondary"
+                      style={{ ...buttonStyle, padding: "4px 8px", fontSize: 11, background: "#64748b" }}
+                    >
+                      Close Detail
+                    </button>
+                  )}
+                </div>
                 <p className="section-subtitle">From failed payment signal to verified recovered outcome.</p>
                 {!selectedItem ? (
                   <div className="empty-block detail-empty">
@@ -1309,50 +1354,83 @@ export function App() {
                   <div className="detail-grid detail-content-grid">
                     <article className="detail-card">
                       <h4>Recovery Journey</h4>
-                      <div className="stage-flow">
-                        {[
-                          "Payment Failed",
-                          "Revenue Opportunity",
-                          "AI Diagnosis",
-                          "Policy Decision",
-                          "Recovery Action",
-                          "Payment",
-                          "Verification",
-                          "Recovered",
-                        ].map((step) => {
-                          const reached = detail.recovery_state.stages.some((stage) => stage.reached && stage.name.toLowerCase().includes(step.toLowerCase().split(" ")[0]));
-                          const active = detail.recovery_state.current.toLowerCase().includes(step.toLowerCase().split(" ")[0]);
-                          return (
-                            <div key={step} className={`stage-node ${reached ? "reached" : ""} ${active ? "active" : ""}`}>
-                              <p className="stage-label">{step}</p>
-                              <p className="stage-value">{active ? "Current" : reached ? "Reached" : "Pending"}</p>
-                            </div>
-                          );
-                        })}
-                      </div>
+                      {(() => {
+                        const stages = detail.recovery_state.stages;
+                        const current = detail.recovery_state.current;
+                        const isReached = (name: string) => stages.some(s => s.name === name && s.reached);
+                        
+                        const steps = [
+                          { label: "Signal", reached: true, active: current === "Opportunity" },
+                          { label: "AI", reached: isReached("Recommended"), active: current === "Recommended" },
+                          { label: "Policy", reached: isReached("Approved"), active: current === "Approved" },
+                          { 
+                            label: "Execution", 
+                            reached: isReached("Payment Link Created") || isReached("Pending") || isReached("Successful"), 
+                            active: ["Payment Link Created", "Pending", "Successful"].includes(current) 
+                          },
+                          { 
+                            label: "Verification", 
+                            reached: isReached("Verified") || isReached("Recovered"), 
+                            active: ["Verified", "Recovered"].includes(current) 
+                          },
+                        ];
+
+                        return (
+                          <div className="stepper-container">
+                            {steps.map((step, idx) => (
+                              <div key={step.label} className="stepper-step">
+                                <div className={`stepper-icon-container ${step.reached ? "reached" : ""} ${step.active ? "active" : ""}`}>
+                                  {step.reached ? (
+                                    <span className="stepper-icon-check">✓</span>
+                                  ) : step.active ? (
+                                    <span className="stepper-icon-dot" />
+                                  ) : (
+                                    <span className="stepper-icon-number">{idx + 1}</span>
+                                  )}
+                                </div>
+                                <div className="stepper-content">
+                                  <span className={`stepper-label ${step.active ? "active" : ""}`}>{step.label}</span>
+                                  <span className="stepper-status">
+                                    {step.active ? "Current" : step.reached ? "Completed" : "Pending"}
+                                  </span>
+                                </div>
+                                {idx < steps.length - 1 && (
+                                  <div className={`stepper-connector ${steps[idx + 1].reached ? "filled" : ""}`} />
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        );
+                      })()}
                     </article>
 
-                    <div className="explainability-grid">
-                      <DetailBlock
-                        title="AI Recommendation"
-                        content={[
-                          `Diagnosis: ${detail.evidence.diagnosis || "-"}`,
-                          `Recommended action: ${detail.action_traceability.recommended_action || "-"}`,
-                          `Confidence: ${formatPercentValue(detail.opportunity.confidence)}`,
-                          `Recovery probability: ${formatPercentValue(detail.opportunity.recovery_probability)}`,
-                          `Provider: ${detail.evidence.provider || "-"} | Model: ${detail.evidence.model || "-"}`,
-                        ]}
-                      />
-                      <DetailBlock
-                        title="Deterministic Policy Decision"
-                        content={[
-                          `Policy result: ${detail.policy_checks.result || "-"}`,
-                          `Execution allowed: ${detail.action_traceability.allow_execution === null ? "-" : detail.action_traceability.allow_execution ? "YES" : "NO"}`,
-                          `Reason codes (failed): ${formatReasonCodes(detail.policy_checks.reason_codes.failed || [])}`,
-                          `Reason codes (passed): ${formatReasonCodes(detail.policy_checks.reason_codes.passed || [])}`,
-                          `Policy version: ${detail.policy_checks.policy_version || "-"}`,
-                        ]}
-                      />
+                    {/* Side-by-side Highlights with VS Divider */}
+                    <div className="core-decision-container">
+                      <div className="detail-card core-decision-card">
+                        <h4>AI Recommendation</h4>
+                        <p><strong>Diagnosis:</strong> {detail.evidence.diagnosis || "-"}</p>
+                        <p><strong>Recommended action:</strong> {detail.action_traceability.recommended_action || "-"}</p>
+                        <p><strong>Confidence:</strong> {formatPercentValue(detail.opportunity.confidence)}</p>
+                        <p><strong>Recovery probability:</strong> {formatPercentValue(detail.opportunity.recovery_probability)}</p>
+                        <p className="meta">Provider: {detail.evidence.provider || "-"} | Model: {detail.evidence.model || "-"}</p>
+                      </div>
+
+                      <div className="core-vs-divider">
+                        <span className="core-vs-text">vs</span>
+                      </div>
+
+                      <div className="detail-card core-decision-card policy-card">
+                        <h4>Deterministic Policy Decision</h4>
+                        <p><strong>Policy result:</strong> {detail.policy_checks.result || "-"}</p>
+                        <p><strong>Execution allowed:</strong> {detail.action_traceability.allow_execution === null ? "-" : detail.action_traceability.allow_execution ? "YES" : "NO"}</p>
+                        <p><strong>Reason codes (failed):</strong> {formatReasonCodes(detail.policy_checks.reason_codes.failed || [])}</p>
+                        <p><strong>Reason codes (passed):</strong> {formatReasonCodes(detail.policy_checks.reason_codes.passed || [])}</p>
+                        <p className="meta">Policy version: {detail.policy_checks.policy_version || "-"}</p>
+                      </div>
+                    </div>
+
+                    {/* Secondary Details Grid */}
+                    <div className="secondary-details-grid">
                       <DetailBlock
                         title="Actual Payment Outcome"
                         content={[
@@ -1363,28 +1441,28 @@ export function App() {
                           `Net recovered: ${formatMinorCurrency(detail.economics.net_recovered_minor)}`,
                         ]}
                       />
+                      <DetailBlock
+                        title="Payment & Failure Context"
+                        content={[
+                          `Payment id: ${detail.payment?.razorpay_payment_id || "-"}`,
+                          `Order id: ${detail.payment?.razorpay_order_id || "-"}`,
+                          `Amount: ${detail.payment ? formatMinorCurrency(detail.payment.amount_minor) : "-"}`,
+                          `Failure category: ${detail.failure.category || "-"}`,
+                          `Failure reason: ${detail.failure.reason || "-"}`,
+                          `Failure code: ${detail.failure.payment_failure_code || "-"}`,
+                        ]}
+                      />
+                      <DetailBlock
+                        title="Economic Impact"
+                        content={[
+                          `Expected recovery: ${formatMinorCurrency(detail.economics.expected_recovery_minor)}`,
+                          `Intervention cost estimate: ${formatMinorCurrency(detail.economics.estimated_intervention_cost_minor)}`,
+                          `Expected net recovery: ${formatMinorCurrency(detail.economics.expected_net_recovery_minor)}`,
+                          `Total intervention cost: ${formatMinorCurrency(detail.economics.total_intervention_cost_minor)}`,
+                        ]}
+                      />
                     </div>
 
-                    <DetailBlock
-                      title="Payment & Failure Context"
-                      content={[
-                        `Payment id: ${detail.payment?.razorpay_payment_id || "-"}`,
-                        `Order id: ${detail.payment?.razorpay_order_id || "-"}`,
-                        `Amount: ${detail.payment ? formatMinorCurrency(detail.payment.amount_minor) : "-"}`,
-                        `Failure category: ${detail.failure.category || "-"}`,
-                        `Failure reason: ${detail.failure.reason || "-"}`,
-                        `Failure code: ${detail.failure.payment_failure_code || "-"}`,
-                      ]}
-                    />
-                    <DetailBlock
-                      title="Economic Impact"
-                      content={[
-                        `Expected recovery: ${formatMinorCurrency(detail.economics.expected_recovery_minor)}`,
-                        `Intervention cost estimate: ${formatMinorCurrency(detail.economics.estimated_intervention_cost_minor)}`,
-                        `Expected net recovery: ${formatMinorCurrency(detail.economics.expected_net_recovery_minor)}`,
-                        `Total intervention cost: ${formatMinorCurrency(detail.economics.total_intervention_cost_minor)}`,
-                      ]}
-                    />
                     <article className="detail-card">
                       <h4>Evidence</h4>
                       <p>Decision source: {detail.evidence.decision_source || "-"}</p>
@@ -1399,17 +1477,27 @@ export function App() {
                       collapsed={selectedTimelineCollapseState}
                       onCollapsedChange={updateSelectedTimelineCollapseState}
                     />
-                    <DetailBlock
-                      title="Audit Trail"
-                      content={detail.audit_trail.length > 0
-                        ? detail.audit_trail.map((item) => `${formatIsoTimestamp(item.timestamp)} ${item.event_type} (${item.outcome_status.toUpperCase()})`)
-                        : ["No audit events yet."]}
-                    />
+
+                    <details className="audit-trail-disclosure" style={{ marginTop: 12 }}>
+                      <summary style={{ cursor: "pointer", color: "#475569", fontSize: 13, fontWeight: 600 }}>
+                        View Raw Audit Trail
+                      </summary>
+                      <div style={{ marginTop: 8 }}>
+                        <DetailBlock
+                          title="Audit Trail"
+                          content={detail.audit_trail.length > 0
+                            ? detail.audit_trail.map((item) => `${formatIsoTimestamp(item.timestamp)} ${item.event_type} (${item.outcome_status.toUpperCase()})`)
+                            : ["No audit events yet."]}
+                        />
+                      </div>
+                    </details>
                   </div>
                 ) : null}
               </article>
             </section>
+        )}
 
+        {activeTab === "evaluation" && (
             <section className="panel">
               <h3 className="section-title">Evaluation Center</h3>
               <p className="section-subtitle">
@@ -1418,11 +1506,11 @@ export function App() {
 
               <div className="filter-row evaluation-controls" style={{ marginTop: 10, gridTemplateColumns: isMobile ? "1fr" : "2fr 1fr 1fr 1fr auto" }}>
                 <div className="form-field">
-                  <label htmlFor="eval-dataset-version" className="field-label">Dataset version</label>
+                  <label htmlFor="eval-dataset-version" className="field-label uppercase-label">Dataset</label>
                   <input id="eval-dataset-version" value={runDatasetVersion} onChange={(e) => setRunDatasetVersion(e.target.value)} placeholder="phase11_dataset" className="field" />
                 </div>
                 <div className="form-field">
-                  <label htmlFor="eval-split" className="field-label">Split</label>
+                  <label htmlFor="eval-split" className="field-label uppercase-label">Split</label>
                   <select id="eval-split" value={runSplit} onChange={(e) => setRunSplit(e.target.value)} className="select">
                     <option value="TEST">TEST</option>
                     <option value="VALIDATION">VALIDATION</option>
@@ -1430,11 +1518,11 @@ export function App() {
                   </select>
                 </div>
                 <div className="form-field">
-                  <label htmlFor="eval-seed" className="field-label">Generation seed</label>
+                  <label htmlFor="eval-seed" className="field-label uppercase-label">Seed</label>
                   <input id="eval-seed" value={runGenerationSeed} onChange={(e) => setRunGenerationSeed(e.target.value)} placeholder="42" className="field" />
                 </div>
                 <div className="form-field">
-                  <label htmlFor="eval-total-cases" className="field-label">Total cases</label>
+                  <label htmlFor="eval-total-cases" className="field-label uppercase-label">Sample Size</label>
                   <input id="eval-total-cases" value={runTotalCases} onChange={(e) => setRunTotalCases(e.target.value)} placeholder="1000" className="field" />
                 </div>
                 <button onClick={runEvaluation} disabled={isRunSubmitting} className="btn" style={{ ...buttonStyle, opacity: isRunSubmitting ? 0.7 : 1 }}>
@@ -1548,38 +1636,68 @@ export function App() {
                 </div>
               </div>
             </section>
+        )}
 
+        {activeTab === "failures" && (
             <section className="panel">
               <h3 className="section-title">Failure & Security Validation</h3>
               <p className="section-subtitle">Controlled failure scenarios with explicit expected vs actual behavior.</p>
               {failureScenarios.length === 0 ? (
                 <div className="empty-block" style={{ marginTop: 10 }}><p className="meta" style={{ margin: 0 }}>No failure scenarios loaded.</p></div>
               ) : (
-                <div className="security-grid" style={{ marginTop: 10 }}>
-                  {failureScenarios.map((scenario) => (
-                    <article key={scenario.scenario_id} className="readiness-check">
-                      <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "start", flexWrap: "wrap" }}>
-                        <div>
-                          <h4 style={{ margin: 0, fontSize: 14 }}>{scenario.title}</h4>
-                          <p className="meta" style={{ marginTop: 4 }}>Scenario: {scenario.description}</p>
-                          <p className="meta" style={{ marginTop: 4 }}>Action: Trigger controlled failure path ({scenario.scenario_id})</p>
-                          <p className="meta" style={{ marginTop: 4 }}>Expected result: {scenario.expected_behavior || `Error code ${scenario.expected_error_code}`}</p>
-                          <p className="meta" style={{ marginTop: 4 }}>Actual result: {scenario.actual_behavior || "Available after trigger"}</p>
-                          <p className="meta" style={{ marginTop: 4 }}>
-                            Security implication: {scenario.severity.toUpperCase()} severity path must fail safely without bypassing policy controls.
-                          </p>
+                <div className="failure-accordion-list" style={{ marginTop: 12 }}>
+                  {failureScenarios.map((scenario) => {
+                    const isExpanded = !!expandedScenarios[scenario.scenario_id];
+                    return (
+                      <div
+                        key={scenario.scenario_id}
+                        className={`failure-accordion-item ${isExpanded ? "expanded" : ""}`}
+                      >
+                        <div
+                          className="failure-accordion-header"
+                          onClick={() => toggleScenarioExpanded(scenario.scenario_id)}
+                        >
+                          <div className="failure-header-left">
+                            <span className={`failure-accordion-arrow ${isExpanded ? "open" : ""}`}>▶</span>
+                            <span className="failure-scenario-title">{scenario.title}</span>
+                          </div>
+                          <div className="failure-header-right">
+                            <Badge tone={scenario.severity.toLowerCase() as any} text={scenario.severity.toUpperCase()} />
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                triggerFailureScenario(scenario.scenario_id);
+                              }}
+                              className="btn btn-trigger-scenario"
+                              style={buttonStyle}
+                            >
+                              Trigger
+                            </button>
+                          </div>
                         </div>
-                        <button onClick={() => triggerFailureScenario(scenario.scenario_id)} className="btn" style={buttonStyle}>
-                          Trigger
-                        </button>
+                        {isExpanded && (
+                          <div className="failure-accordion-body">
+                            <div className="failure-details-grid">
+                              <p><strong>Scenario:</strong> {scenario.description}</p>
+                              <p><strong>Action:</strong> Trigger controlled failure path ({scenario.scenario_id})</p>
+                              <p><strong>Expected result:</strong> {scenario.expected_behavior || `Error code ${scenario.expected_error_code}`}</p>
+                              <p><strong>Actual result:</strong> {scenario.actual_behavior || "Available after trigger"}</p>
+                              <p className="security-implication-text">
+                                <strong>Security implication:</strong> {scenario.severity.toUpperCase()} severity path must fail safely without bypassing policy controls.
+                              </p>
+                            </div>
+                          </div>
+                        )}
                       </div>
-                    </article>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
               {failureScenarioResult ? <p className="meta" style={{ marginTop: 12 }}>{failureScenarioResult}</p> : null}
             </section>
+        )}
 
+        {activeTab === "readiness" && (
             <section className="panel">
               <h3 className="section-title">Readiness Validation</h3>
               <p className="section-subtitle">Execute acceptance workflow and capture PASS / PARTIAL / FAIL with evidence.</p>
@@ -1606,6 +1724,7 @@ export function App() {
                 </div>
               ) : null}
             </section>
+        )}
           </>
         ) : null}
       </section>
@@ -1698,27 +1817,8 @@ function TimelineGroups({ groups, collapsed, onCollapsedChange }: {
 }
 
 function Badge({ tone, text }: { tone: "pass" | "fail" | "pending" | "neutral" | "high" | "medium" | "low"; text: string }) {
-  const styleMap: Record<string, CSSProperties> = {
-    pass: { background: "#dcfce7", color: "#166534" },
-    fail: { background: "#fee2e2", color: "#991b1b" },
-    pending: { background: "#fef3c7", color: "#92400e" },
-    neutral: { background: "#e2e8f0", color: "#334155" },
-    high: { background: "#fee2e2", color: "#9f1239" },
-    medium: { background: "#ffedd5", color: "#9a3412" },
-    low: { background: "#dcfce7", color: "#166534" },
-  };
-
   return (
-    <span
-      style={{
-        ...(styleMap[tone] || styleMap.pending),
-        borderRadius: 999,
-        padding: "2px 8px",
-        fontSize: 11,
-        fontWeight: 700,
-        display: "inline-block",
-      }}
-    >
+    <span className={`badge badge-${tone}`}>
       {text}
     </span>
   );
