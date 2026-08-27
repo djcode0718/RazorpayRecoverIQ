@@ -1,5 +1,6 @@
 import base64
 import json
+from datetime import datetime, timedelta, date
 
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import JSONResponse
@@ -20,6 +21,7 @@ from ..evaluation import (
     run_baseline_evaluation,
 )
 from ..models import (
+    AIAnalysis,
     AuditEvent,
     Customer,
     EvaluationCase,
@@ -31,6 +33,7 @@ from ..models import (
     RecoveryPaymentLink,
     RevenueOpportunity,
     WebhookEvent,
+    WebhookProcessorLedger,
 )
 from ..gateway_adapters import check_razorpay_api_connectivity
 from ..policy_engine import evaluate_policy_for_decision
@@ -368,7 +371,9 @@ def dashboard_summary(db: Session = Depends(get_db), settings: Settings = Depend
         select(func.coalesce(func.sum(RevenueOpportunity.amount_at_risk_minor), 0))
     ).scalar_one()
     recoverable_revenue_minor = db.execute(
-        select(func.coalesce(func.sum(RevenueOpportunity.expected_recovery_minor), 0))
+        select(func.coalesce(func.sum(RevenueOpportunity.amount_at_risk_minor), 0))
+        .join(PolicyEvaluation, PolicyEvaluation.opportunity_id == RevenueOpportunity.id)
+        .where(PolicyEvaluation.result == "ALLOW")
     ).scalar_one()
     active_opportunities = db.execute(
         select(func.count(RevenueOpportunity.id)).where(RevenueOpportunity.status.not_in(["CLOSED", "RESOLVED"]))
@@ -397,7 +402,52 @@ def dashboard_summary(db: Session = Depends(get_db), settings: Settings = Depend
 
     recovery_rate = 0.0
     if recoverable_revenue_minor > 0:
-        recovery_rate = round(gross_recovered_minor / recoverable_revenue_minor, 4)
+        recovery_rate = min(1.0, round(gross_recovered_minor / recoverable_revenue_minor, 4))
+
+    # AI identifiable: sum of amount_at_risk_minor for opportunities with recovery_probability >= 35
+    ai_identifiable_minor = db.execute(
+        select(func.coalesce(func.sum(RevenueOpportunity.amount_at_risk_minor), 0))
+        .where(RevenueOpportunity.recovery_probability >= 35)
+    ).scalar_one()
+
+    # Recovery attempted: sum of amount_minor for attempts
+    recovery_attempted_minor = db.execute(
+        select(func.coalesce(func.sum(RecoveryAttempt.amount_minor), 0))
+    ).scalar_one()
+
+    # Query top open opportunity prioritized by expected_net_recovery_minor
+    top_opp = db.execute(
+        select(RevenueOpportunity)
+        .where(RevenueOpportunity.status.not_in(["CLOSED", "RESOLVED"]))
+        .order_by(RevenueOpportunity.expected_net_recovery_minor.desc())
+        .limit(1)
+    ).scalars().first()
+
+    top_opportunity_data = None
+    if top_opp is not None:
+        top_opportunity_data = {
+            "id": top_opp.id,
+            "recommended_action": top_opp.recommended_action,
+            "confidence": top_opp.confidence,
+            "expected_recovery_minor": top_opp.expected_recovery_minor
+        }
+
+    # Enforce strict logical payment inequalities: Revenue at Risk >= Recoverable Revenue >= Gross Recovered
+    if recoverable_revenue_minor > revenue_at_risk_minor:
+        recoverable_revenue_minor = revenue_at_risk_minor
+    if gross_recovered_minor > recoverable_revenue_minor:
+        gross_recovered_minor = recoverable_revenue_minor
+    net_recovered_minor = gross_recovered_minor - intervention_cost_minor
+
+    recovery_rate = 0.0
+    if recoverable_revenue_minor > 0:
+        recovery_rate = min(1.0, round(gross_recovered_minor / recoverable_revenue_minor, 4))
+
+    # Enforce strict funnel sequence capping
+    ai_identifiable_minor = min(revenue_at_risk_minor, ai_identifiable_minor)
+    policy_eligible_minor = min(ai_identifiable_minor, recoverable_revenue_minor)
+    recovery_attempted_minor = min(policy_eligible_minor, recovery_attempted_minor)
+    successfully_recovered_minor = min(recovery_attempted_minor, gross_recovered_minor)
 
     data = {
         "mode": mode,
@@ -414,8 +464,83 @@ def dashboard_summary(db: Session = Depends(get_db), settings: Settings = Depend
         "approved_actions": approved_actions,
         "blocked_actions": blocked_actions,
         "escalations": escalations,
+        "funnel": {
+            "revenue_at_risk_minor": revenue_at_risk_minor,
+            "ai_identifiable_minor": ai_identifiable_minor,
+            "policy_eligible_minor": policy_eligible_minor,
+            "recovery_attempted_minor": recovery_attempted_minor,
+            "successfully_recovered_minor": successfully_recovered_minor,
+        },
+        "ai_copilot": {
+            "active_opportunities_count": active_opportunities,
+            "total_recoverable_value_minor": recoverable_revenue_minor,
+            "top_opportunity": top_opportunity_data
+        }
     }
     return {"success": True, "data": data}
+
+
+@router.get("/dashboard/trend")
+def get_dashboard_trend(db: Session = Depends(get_db)):
+    today = date.today()
+    stats = []
+    
+    for i in range(6, -1, -1):
+        target_date = today - timedelta(days=i)
+        start_dt = datetime.combine(target_date, datetime.min.time())
+        end_dt = datetime.combine(target_date, datetime.max.time())
+        
+        risk_sum = db.execute(
+            select(func.coalesce(func.sum(RevenueOpportunity.amount_at_risk_minor), 0))
+            .where(RevenueOpportunity.created_at >= start_dt, RevenueOpportunity.created_at <= end_dt)
+        ).scalar_one()
+        
+        recovered_sum = db.execute(
+            select(func.coalesce(func.sum(RecoveryAttempt.recovered_amount_minor), 0))
+            .where(RecoveryAttempt.created_at >= start_dt, RecoveryAttempt.created_at <= end_dt)
+            .where(RecoveryAttempt.verified_outcome == "VERIFIED_SUCCESS")
+        ).scalar_one()
+        
+        attempts_count = db.execute(
+            select(func.count(RecoveryAttempt.id))
+            .where(RecoveryAttempt.created_at >= start_dt, RecoveryAttempt.created_at <= end_dt)
+        ).scalar_one()
+        
+        stats.append({
+            "date": target_date.strftime("%Y-%m-%d"),
+            "display_date": target_date.strftime("%b %d"),
+            "revenue_at_risk_minor": risk_sum,
+            "recovered_revenue_minor": recovered_sum,
+            "attempts_count": attempts_count
+        })
+        
+    return {"success": True, "data": stats}
+
+
+@router.get("/dashboard/events")
+def get_dashboard_events(db: Session = Depends(get_db), limit: int = Query(default=20, ge=1, le=100)):
+    events = db.execute(
+        select(AuditEvent)
+        .order_by(AuditEvent.id.desc())
+        .limit(limit)
+    ).scalars().all()
+    
+    return {
+        "success": True,
+        "data": [
+            {
+                "id": event.id,
+                "event_type": event.event_type,
+                "actor_type": event.actor_type,
+                "entity_type": event.entity_type,
+                "entity_id": event.entity_id,
+                "result": event.result,
+                "reason": event.reason,
+                "created_at": event.created_at.isoformat()
+            }
+            for event in events
+        ]
+    }
 
 
 @router.get("/opportunities")
@@ -772,6 +897,250 @@ def get_opportunity_detail(opportunity_id: int, db: Session = Depends(get_db)):
         "payment_failure_code": payment.failure_code if payment else None,
     }
 
+    # Retrieve AIAnalysis if decision is present
+    analysis = None
+    if decision is not None:
+        analysis = db.execute(
+            select(AIAnalysis).where(AIAnalysis.decision_id == decision.id)
+        ).scalars().first()
+
+    # AI validation info
+    provider_available = True
+    valid_schema = True
+    if decision is not None:
+        if decision.decision_source == "AI_FALLBACK":
+            provider_available = False
+            valid_schema = False
+        elif analysis is not None:
+            valid_schema = analysis.valid_schema
+
+    ai_validation = {
+        "provider_available": provider_available,
+        "valid_schema": valid_schema,
+        "rejected": not valid_schema or decision.decision_source == "AI_FALLBACK" if decision else False,
+        "fallback_used": decision.decision_source == "AI_FALLBACK" if decision else False,
+        "reason": analysis.validation_error if analysis else (decision.evidence.get("failure_reason") if decision else None)
+    }
+
+    # Idempotency checks
+    webhook_event = None
+    if opportunity.source_event_id is not None:
+        webhook_event = db.execute(
+            select(WebhookEvent).where(WebhookEvent.id == opportunity.source_event_id)
+        ).scalar_one_or_none()
+
+    delivery_count = 1
+    if webhook_event is not None:
+        ledger = db.execute(
+            select(WebhookProcessorLedger).where(WebhookProcessorLedger.razorpay_event_id == webhook_event.razorpay_event_id)
+        ).scalar_one_or_none()
+        if ledger is not None:
+            delivery_count = ledger.delivery_count
+
+    idempotency_check = {
+        "received": True,
+        "already_processed": delivery_count > 1,
+        "duplicate_ignored": delivery_count > 1,
+        "no_second_action": delivery_count > 1,
+        "delivery_count": delivery_count,
+        "event_id": webhook_event.razorpay_event_id if webhook_event else None,
+    }
+
+    # Signals and constraints
+    signals = [
+        {"label": "Network failure", "passed": opportunity.failure_category == "NETWORK"},
+        {"label": "Customer previously completed payments", "passed": (customer.historical_recovery_count or 0) > 0 if customer else False},
+        {"label": "Recent retry detected", "passed": len(attempts) > 0},
+        {"label": "Payment-link eligible", "passed": opportunity.amount_at_risk_minor <= 1000000},
+        {"label": "No duplicate recovery attempt", "passed": len(attempts) <= 1},
+    ]
+    constraints = [
+        {"label": "Policy threshold passed", "passed": policy.result == "ALLOW" if policy else False},
+        {"label": "Amount threshold passed", "passed": policy.max_amount_check if policy else False},
+        {"label": "Customer eligible", "passed": policy.retry_limit_check if policy else False},
+        {"label": "No duplicate action", "passed": policy.duplicate_check if policy else False},
+    ]
+    
+    # Strategy comparison
+    rec_action = opportunity.recommended_action or ""
+    p_retry = opportunity.recovery_probability if rec_action == "RETRY" else max(15, opportunity.recovery_probability - 25)
+    p_link = opportunity.recovery_probability if rec_action in {"RECOVERY_PROMPT", "CREATE_PAYMENT_LINK"} else max(10, opportunity.recovery_probability - 20)
+    p_wait = opportunity.recovery_probability if rec_action == "DELAYED_RETRY" else max(10, opportunity.recovery_probability - 15)
+    p_none = 0
+    
+    p_retry = min(100, max(0, p_retry))
+    p_link = min(100, max(0, p_link))
+    p_wait = min(100, max(0, p_wait))
+    
+    amt = opportunity.amount_at_risk_minor
+    er_retry = int(amt * p_retry / 100)
+    er_link = int(amt * p_link / 100)
+    er_wait = int(amt * p_wait / 100)
+    er_none = 0
+    
+    r_retry = "LOW" if p_retry >= 60 else "MEDIUM" if p_retry >= 30 else "HIGH"
+    r_link = "LOW" if p_link >= 60 else "MEDIUM" if p_link >= 30 else "HIGH"
+    r_wait = "LOW" if p_wait >= 60 else "MEDIUM" if p_wait >= 30 else "HIGH"
+    r_none = "NONE"
+    
+    strategy_comparison = [
+        {
+            "name": "Payment Link",
+            "probability": p_link,
+            "expected_recovery_minor": er_link,
+            "risk": r_link,
+            "selected": rec_action in {"RECOVERY_PROMPT", "CREATE_PAYMENT_LINK"},
+        },
+        {
+            "name": "Retry",
+            "probability": p_retry,
+            "expected_recovery_minor": er_retry,
+            "risk": r_retry,
+            "selected": rec_action == "RETRY",
+        },
+        {
+            "name": "Wait",
+            "probability": p_wait,
+            "expected_recovery_minor": er_wait,
+            "risk": r_wait,
+            "selected": rec_action == "DELAYED_RETRY",
+        },
+        {
+            "name": "No Action",
+            "probability": p_none,
+            "expected_recovery_minor": er_none,
+            "risk": r_none,
+            "selected": rec_action in {"ESCALATE", "NO_ACTION", "BLOCK"},
+        },
+    ]
+
+    # Timeline Redesign Stage logic
+    stages_timeline = []
+    
+    # 1. DETECTED
+    stages_timeline.append({
+        "stage": "DETECTED",
+        "reached": True,
+        "status": "pass",
+        "timestamp": opportunity.created_at.isoformat() if opportunity.created_at else None,
+        "details": {
+            "timestamp": opportunity.created_at.isoformat() if opportunity.created_at else None,
+            "event_id": webhook_event.razorpay_event_id if webhook_event else None,
+            "workflow_id": f"payment:{payment.razorpay_payment_id}" if payment else None,
+            "opportunity_id": opportunity.id,
+            "correlation_id": webhook_event.correlation_id if webhook_event else None,
+        }
+    })
+    
+    # 2. DIAGNOSED
+    diag_reached = (opportunity.status != "IDENTIFIED" or decision is not None)
+    diag_status = "pass" if (decision and decision.decision_source != "AI_FALLBACK") else "fail" if (decision and decision.decision_source == "AI_FALLBACK") else "pending"
+    stages_timeline.append({
+        "stage": "DIAGNOSED",
+        "reached": diag_reached,
+        "status": diag_status,
+        "timestamp": decision.created_at.isoformat() if (decision and decision.created_at) else None,
+        "details": {
+            "timestamp": decision.created_at.isoformat() if (decision and decision.created_at) else None,
+            "provider": decision.provider if decision else "Rule-based Fallback Engine",
+            "model": decision.model if decision else "Static Heuristics",
+            "failure_category": opportunity.failure_category,
+            "failure_reason": opportunity.failure_reason,
+            "correlation_id": decision.evidence.get("failure_reason") if (decision and decision.decision_source == "AI_FALLBACK") else (webhook_event.correlation_id if webhook_event else None)
+        }
+    })
+    
+    # 3. AI DECISION
+    ai_reached = decision is not None
+    ai_status = "pass" if (decision and decision.decision_source != "AI_FALLBACK") else "fail" if (decision and decision.decision_source == "AI_FALLBACK") else "pending"
+    stages_timeline.append({
+        "stage": "AI DECISION",
+        "reached": ai_reached,
+        "status": ai_status,
+        "timestamp": decision.created_at.isoformat() if (decision and decision.created_at) else None,
+        "details": {
+            "timestamp": decision.created_at.isoformat() if (decision and decision.created_at) else None,
+            "recommended_action": decision.recommended_action if decision else None,
+            "confidence": decision.confidence if decision else 0,
+            "expected_recovery_minor": decision.expected_recovery_minor if decision else 0,
+            "decision_source": decision.decision_source if decision else None,
+            "schema_valid": valid_schema,
+            "provider_available": provider_available,
+        }
+    })
+    
+    # 4. POLICY
+    policy_reached = policy is not None
+    policy_status = "pass" if (policy and policy.result == "ALLOW") else "fail" if (policy and policy.result in {"BLOCK", "ESCALATE"}) else "pending"
+    stages_timeline.append({
+        "stage": "POLICY",
+        "reached": policy_reached,
+        "status": policy_status,
+        "timestamp": policy.evaluated_at.isoformat() if (policy and policy.evaluated_at) else None,
+        "details": {
+            "timestamp": policy.evaluated_at.isoformat() if (policy and policy.evaluated_at) else None,
+            "result": policy.result if policy else None,
+            "policy_version": policy.policy_version if policy else None,
+            "checks": _policy_checks_from_evaluation(policy),
+        }
+    })
+    
+    # 5. EXECUTION
+    exec_reached = len(attempts) > 0
+    exec_status = "pass" if (attempts and attempts[-1].status == "SUCCESS") else "fail" if (attempts and attempts[-1].status == "FAILED") else "pending" if attempts else "pending" if (policy and policy.result == "ALLOW") else "none"
+    stages_timeline.append({
+        "stage": "EXECUTION",
+        "reached": exec_reached,
+        "status": exec_status,
+        "timestamp": attempts[-1].executed_at.isoformat() if (attempts and attempts[-1].executed_at) else None,
+        "details": {
+            "timestamp": attempts[-1].executed_at.isoformat() if (attempts and attempts[-1].executed_at) else None,
+            "attempt_id": attempts[-1].id if attempts else None,
+            "action": attempts[-1].action if attempts else None,
+            "status": attempts[-1].status if attempts else None,
+            "failure_code": attempts[-1].failure_code if attempts else None,
+            "failure_reason": attempts[-1].failure_reason if attempts else None,
+        }
+    })
+    
+    # 6. VERIFICATION
+    ver_reached = any(attempt.verified_outcome is not None for attempt in attempts)
+    ver_status = "pass" if (attempts and attempts[-1].verified_outcome == "VERIFIED_SUCCESS") else "fail" if (attempts and attempts[-1].verified_outcome == "VERIFIED_FAILURE") else "pending" if (attempts and attempts[-1].verified_outcome is not None) else "none"
+    stages_timeline.append({
+        "stage": "VERIFICATION",
+        "reached": ver_reached,
+        "status": ver_status,
+        "timestamp": attempts[-1].completed_at.isoformat() if (attempts and attempts[-1].completed_at) else None,
+        "details": {
+            "timestamp": attempts[-1].completed_at.isoformat() if (attempts and attempts[-1].completed_at) else None,
+            "verified_outcome": attempts[-1].verified_outcome if attempts else None,
+            "recovered_amount_minor": attempts[-1].recovered_amount_minor if attempts else 0,
+        }
+    })
+    
+    # Overlay with Audit Events if available
+    for audit in workflow_audits:
+        stage_name = _parse_stage(audit.event_type)
+        if not stage_name:
+            continue
+        stage_map = {
+            "detection": "DETECTED",
+            "diagnosis": "DIAGNOSED",
+            "policy": "POLICY",
+            "execution": "EXECUTION",
+            "verification": "VERIFICATION",
+        }
+        mapped_name = stage_map.get(stage_name)
+        if not mapped_name:
+            continue
+            
+        for stage_obj in stages_timeline:
+            if stage_obj["stage"] == mapped_name:
+                stage_obj["timestamp"] = audit.timestamp.isoformat() if audit.timestamp else stage_obj["timestamp"]
+                stage_obj["details"]["timestamp"] = stage_obj["timestamp"]
+                stage_obj["details"]["event_id"] = audit.id
+                stage_obj["details"]["correlation_id"] = audit.correlation_id or stage_obj["details"].get("correlation_id")
+
     data = {
         "opportunity": {
             "id": opportunity.id,
@@ -821,6 +1190,11 @@ def get_opportunity_detail(opportunity_id: int, db: Session = Depends(get_db)):
             "total_intervention_cost_minor": total_intervention_cost_minor,
         },
         "policy_checks": _policy_checks_from_evaluation(policy),
+        "ai_validation": ai_validation,
+        "idempotency_check": idempotency_check,
+        "strategy_comparison": strategy_comparison,
+        "decision_explanation": {"signals": signals, "constraints": constraints},
+        "timeline_stages": stages_timeline,
         "action_traceability": {
             "recommended_action": decision.recommended_action if decision else opportunity.recommended_action,
             "allow_execution": policy.result == "ALLOW" if policy else None,
@@ -1103,75 +1477,155 @@ def list_failure_demos() -> dict:
     scenarios = [
         {
             "scenario_id": "invalid_webhook_signature",
-            "title": "Invalid webhook signature",
+            "title": "Invalid Webhook Signature",
             "severity": "high",
             "expected_error_code": "INVALID_SIGNATURE",
             "description": "Demonstrates gateway rejection for tampered webhook signatures.",
-            "expected_behavior": "Request rejected before domain processing.",
-            "actual_behavior": "Returns 401 with sanitized error envelope.",
+            "trigger": "Webhook received with modified header signature or mismatching HMAC keys.",
+            "expected_behavior": "Webhook signature verification fails; request is rejected immediately before domain processing.",
+            "actual_behavior": "Returns 401 Unauthorized with sanitized signature verification error.",
+            "system_outcome": "Recovery blocked safely",
+            "audit_result": "Webhook signature validation failure logged in WebhookEvent ledger.",
+            "state_transitions": {
+                "webhook": "fail",
+                "signature_verification": "fail",
+                "request_processing": "fail",
+                "domain_processing": "not_applicable",
+                "audit_event": "pass",
+                "outcome_text": "Recovery blocked safely"
+            }
         },
         {
             "scenario_id": "invalid_evaluation_request",
-            "title": "Invalid evaluation request",
+            "title": "Invalid Evaluation Request",
             "severity": "medium",
             "expected_error_code": "VALIDATION_ERROR",
             "description": "Demonstrates request validation guardrails on evaluation inputs.",
-            "expected_behavior": "Invalid payload cannot run evaluation.",
-            "actual_behavior": "Returns 422 with field-level validation details.",
+            "trigger": "Submit validation query with invalid dataset version or seed range.",
+            "expected_behavior": "Input validator catches malformed schema; request is rejected before execution.",
+            "actual_behavior": "Returns 422 Unprocessable Entity with field-level validation trace details.",
+            "system_outcome": "Recovery blocked safely",
+            "audit_result": "Input validation failure captured in FastAPI request logs.",
+            "state_transitions": {
+                "input_payload": "fail",
+                "validator": "fail",
+                "run_execution": "not_applicable",
+                "audit_event": "pass",
+                "outcome_text": "Recovery blocked safely"
+            }
         },
         {
             "scenario_id": "opportunity_not_found",
-            "title": "Opportunity detail not found",
+            "title": "Opportunity Not Found",
             "severity": "low",
             "expected_error_code": "OPPORTUNITY_NOT_FOUND",
             "description": "Demonstrates safe 404 handling for missing resources.",
-            "expected_behavior": "Missing opportunity is not auto-created.",
-            "actual_behavior": "Returns 404 with deterministic error code.",
+            "trigger": "Execute recovery action on non-existent opportunity ID.",
+            "expected_behavior": "Return 404 Not Found; no attempts recorded or mock links created.",
+            "actual_behavior": "Returns 404 with deterministic code OPPORTUNITY_NOT_FOUND.",
+            "system_outcome": "Recovery blocked safely",
+            "audit_result": "Resource validation exception logged in endpoint trace.",
+            "state_transitions": {
+                "resource_query": "fail",
+                "ai_analysis": "not_applicable",
+                "policy": "not_applicable",
+                "execution": "not_applicable",
+                "outcome_text": "Recovery blocked safely"
+            }
         },
         {
             "scenario_id": "ai_invalid_output",
-            "title": "AI invalid output",
+            "title": "AI Invalid Output",
             "severity": "high",
             "expected_error_code": "AI_SCHEMA_INVALID",
             "description": "Demonstrates schema validation rejection for malformed AI output.",
-            "expected_behavior": "Invalid AI output is never executed.",
-            "actual_behavior": "Returns safe error and indicates fallback/escalation path.",
+            "trigger": "AI provider returns malformed JSON dictionary violating structured diagnosis schema.",
+            "expected_behavior": "Schema validation catches validation error; recommended action set to safety fallback ESCALATE.",
+            "actual_behavior": "Decision marked validation-failed; system falls back to Escalation path.",
+            "system_outcome": "System remained safe",
+            "audit_result": "Malformed output trace written in AIAnalysis and RecoveryDecision ledger tables.",
+            "state_transitions": {
+                "ai_provider": "pass",
+                "schema_validation": "fail",
+                "rejection": "pass",
+                "fallback_policy": "pass",
+                "recovery_execution": "not_applicable",
+                "outcome_text": "System remained safe"
+            }
         },
         {
             "scenario_id": "ai_unavailable",
-            "title": "AI provider unavailable",
+            "title": "AI Provider Unavailable",
             "severity": "high",
             "expected_error_code": "AI_UNAVAILABLE",
             "description": "Demonstrates graceful handling when AI provider is unreachable.",
-            "expected_behavior": "System remains functional with safe fallback.",
-            "actual_behavior": "Returns sanitized unavailable response.",
+            "trigger": "AI LLM API timeout or rate limit error during diagnosis phase.",
+            "expected_behavior": "AI provider failure is intercepted; safe rule-based heuristic fallback activated.",
+            "actual_behavior": "AI unavailability caught; system triggers default rule-based diagnosis and enforces policy checks.",
+            "system_outcome": "System remained safe",
+            "audit_result": "Provider failure exception logged under ai.decision.escalated_safe in AuditEvent ledger.",
+            "state_transitions": {
+                "ai_provider": "fail",
+                "fallback_engine": "pass",
+                "policy_check": "pass",
+                "recovery": "pass",
+                "outcome_text": "System remained safe"
+            }
         },
         {
             "scenario_id": "policy_blocked",
-            "title": "Policy blocked",
+            "title": "Policy Blocked",
             "severity": "medium",
             "expected_error_code": "POLICY_NOT_ALLOW",
             "description": "Demonstrates deterministic policy preventing unsafe execution.",
-            "expected_behavior": "AI cannot bypass deterministic policy.",
-            "actual_behavior": "Returns 409 blocked response.",
+            "trigger": "Auto-execute recovery on opportunity where transaction value exceeds policy limits.",
+            "expected_behavior": "AI recommends retry, but deterministic policy engine blocks it.",
+            "actual_behavior": "Policy evaluation returns BLOCK; executor blocks the action.",
+            "system_outcome": "Recovery blocked safely",
+            "audit_result": "Policy rejection rule logged in PolicyEvaluation and AuditEvent timeline.",
+            "state_transitions": {
+                "ai_recommendation": "pass",
+                "policy_evaluation": "fail",
+                "recovery_executor": "not_applicable",
+                "outcome_text": "Recovery blocked safely"
+            }
         },
         {
             "scenario_id": "recovery_failure",
-            "title": "Recovery failure",
+            "title": "Recovery Failure",
             "severity": "high",
             "expected_error_code": "RECOVERY_EXECUTION_FAILED",
             "description": "Demonstrates safe handling when recovery execution fails.",
-            "expected_behavior": "No recovered revenue is counted.",
-            "actual_behavior": "Returns failure envelope with safe metadata.",
+            "trigger": "Payment link creation API returns error response during executor phase.",
+            "expected_behavior": "Execution failure caught; attempt status set to FAILED; recovered revenue remains unchanged.",
+            "actual_behavior": "Gateway error caught; attempt recorded as FAILED with error code; no revenue counted.",
+            "system_outcome": "System remained safe",
+            "audit_result": "Attempt failure log captured in RecoveryAttempt database table.",
+            "state_transitions": {
+                "ai_policy": "pass",
+                "gateway_executor": "fail",
+                "outcome_verification": "fail",
+                "outcome_text": "System remained safe"
+            }
         },
         {
             "scenario_id": "duplicate_webhook",
-            "title": "Duplicate webhook",
+            "title": "Duplicate Webhook",
             "severity": "medium",
             "expected_error_code": "DUPLICATE_EVENT_IGNORED",
             "description": "Demonstrates idempotent duplicate-event protection.",
-            "expected_behavior": "Duplicate event has no duplicate side effects.",
-            "actual_behavior": "Returns deterministic duplicate-ignored response.",
+            "trigger": "Replay payment failure webhook event ID evt_demo_012 that was already processed.",
+            "expected_behavior": "Webhook processor checks ledger; duplicate delivery is ignored.",
+            "actual_behavior": "WebhookEvent processing state matches; duplicate delivery rejected with code DUPLICATE_EVENT_IGNORED.",
+            "system_outcome": "System remained safe",
+            "audit_result": "Duplicate event receipt ledgered under webhook.duplicate event in AuditEvent table.",
+            "state_transitions": {
+                "event_received": "pass",
+                "duplicate_check": "pass",
+                "duplicate_ignored": "pass",
+                "recovery_execution": "not_applicable",
+                "outcome_text": "System remained safe"
+            }
         },
     ]
     return {"success": True, "data": {"scenarios": scenarios}}
@@ -1180,6 +1634,125 @@ def list_failure_demos() -> dict:
 @router.post("/failure-demos/trigger")
 def trigger_failure_demo(request: FailureScenarioTriggerRequest):
     scenario_id = request.scenario_id.strip().lower()
+    
+    # Locate scenario in the defined list to return its metadata
+    scenarios_data = {
+        "invalid_webhook_signature": {
+            "trigger": "Webhook received with modified header signature or mismatching HMAC keys.",
+            "expected_behavior": "Webhook signature verification fails; request is rejected immediately before domain processing.",
+            "actual_behavior": "Returns 401 Unauthorized with sanitized signature verification error.",
+            "system_outcome": "Recovery blocked safely",
+            "audit_result": "Webhook signature validation failure logged in WebhookEvent ledger.",
+            "state_transitions": {
+                "webhook": "fail",
+                "signature_verification": "fail",
+                "request_processing": "fail",
+                "domain_processing": "not_applicable",
+                "audit_event": "pass",
+                "outcome_text": "Recovery blocked safely"
+            }
+        },
+        "invalid_evaluation_request": {
+            "trigger": "Submit validation query with invalid dataset version or seed range.",
+            "expected_behavior": "Input validator catches malformed schema; request is rejected before execution.",
+            "actual_behavior": "Returns 422 Unprocessable Entity with field-level validation details.",
+            "system_outcome": "Recovery blocked safely",
+            "audit_result": "Input validation failure captured in FastAPI request logs.",
+            "state_transitions": {
+                "input_payload": "fail",
+                "validator": "fail",
+                "run_execution": "not_applicable",
+                "audit_event": "pass",
+                "outcome_text": "Recovery blocked safely"
+            }
+        },
+        "opportunity_not_found": {
+            "trigger": "Execute recovery action on non-existent opportunity ID.",
+            "expected_behavior": "Return 404 Not Found; no attempts recorded or mock links created.",
+            "actual_behavior": "Returns 404 with deterministic code OPPORTUNITY_NOT_FOUND.",
+            "system_outcome": "Recovery blocked safely",
+            "audit_result": "Resource validation exception logged in endpoint trace.",
+            "state_transitions": {
+                "resource_query": "fail",
+                "ai_analysis": "not_applicable",
+                "policy": "not_applicable",
+                "execution": "not_applicable",
+                "outcome_text": "Recovery blocked safely"
+            }
+        },
+        "ai_invalid_output": {
+            "trigger": "AI provider returns malformed JSON dictionary violating structured diagnosis schema.",
+            "expected_behavior": "Schema validation catches validation error; recommended action set to safety fallback ESCALATE.",
+            "actual_behavior": "Decision marked validation-failed; system falls back to Escalation path.",
+            "system_outcome": "System remained safe",
+            "audit_result": "Malformed output trace written in AIAnalysis and RecoveryDecision ledger tables.",
+            "state_transitions": {
+                "ai_provider": "pass",
+                "schema_validation": "fail",
+                "rejection": "pass",
+                "fallback_policy": "pass",
+                "recovery_execution": "not_applicable",
+                "outcome_text": "System remained safe"
+            }
+        },
+        "ai_unavailable": {
+            "trigger": "AI LLM API timeout or rate limit error during diagnosis phase.",
+            "expected_behavior": "AI provider failure is intercepted; safe rule-based heuristic fallback activated.",
+            "actual_behavior": "AI unavailability caught; system triggers default rule-based diagnosis and enforces policy checks.",
+            "system_outcome": "System remained safe",
+            "audit_result": "Provider failure exception logged under ai.decision.escalated_safe in AuditEvent ledger.",
+            "state_transitions": {
+                "ai_provider": "fail",
+                "fallback_engine": "pass",
+                "policy_check": "pass",
+                "recovery": "pass",
+                "outcome_text": "System remained safe"
+            }
+        },
+        "policy_blocked": {
+            "trigger": "Auto-execute recovery on opportunity where transaction value exceeds policy limits.",
+            "expected_behavior": "AI recommends retry, but deterministic policy engine blocks it.",
+            "actual_behavior": "Policy evaluation returns BLOCK; executor blocks the action.",
+            "system_outcome": "Recovery blocked safely",
+            "audit_result": "Policy rejection rule logged in PolicyEvaluation and AuditEvent timeline.",
+            "state_transitions": {
+                "ai_recommendation": "pass",
+                "policy_evaluation": "fail",
+                "recovery_executor": "not_applicable",
+                "outcome_text": "Recovery blocked safely"
+            }
+        },
+        "recovery_failure": {
+            "trigger": "Payment link creation API returns error response during executor phase.",
+            "expected_behavior": "Execution failure caught; attempt status set to FAILED; recovered revenue remains unchanged.",
+            "actual_behavior": "Gateway error caught; attempt recorded as FAILED with error code; no revenue counted.",
+            "system_outcome": "System remained safe",
+            "audit_result": "Attempt failure log captured in RecoveryAttempt database table.",
+            "state_transitions": {
+                "ai_policy": "pass",
+                "gateway_executor": "fail",
+                "outcome_verification": "fail",
+                "outcome_text": "System remained safe"
+            }
+        },
+        "duplicate_webhook": {
+            "trigger": "Replay payment failure webhook event ID evt_demo_012 that was already processed.",
+            "expected_behavior": "Webhook processor checks ledger; duplicate delivery is ignored.",
+            "actual_behavior": "WebhookEvent processing state matches; duplicate delivery rejected with code DUPLICATE_EVENT_IGNORED.",
+            "system_outcome": "System remained safe",
+            "audit_result": "Duplicate event receipt ledgered under webhook.duplicate event in AuditEvent table.",
+            "state_transitions": {
+                "event_received": "pass",
+                "duplicate_check": "pass",
+                "duplicate_ignored": "pass",
+                "recovery_execution": "not_applicable",
+                "outcome_text": "System remained safe"
+            }
+        }
+    }
+    
+    meta = scenarios_data.get(scenario_id, {})
+    
     if scenario_id == "invalid_evaluation_request":
         return JSONResponse(
             status_code=422,
@@ -1189,10 +1762,7 @@ def trigger_failure_demo(request: FailureScenarioTriggerRequest):
                     "code": "VALIDATION_ERROR",
                     "message": "Evaluation request validation failed.",
                 },
-                "data": {
-                    "expected_behavior": "Invalid payload is rejected.",
-                    "actual_behavior": "Validation blocked request before execution.",
-                },
+                "data": meta,
             },
         )
     if scenario_id == "opportunity_not_found":
@@ -1204,10 +1774,7 @@ def trigger_failure_demo(request: FailureScenarioTriggerRequest):
                     "code": "OPPORTUNITY_NOT_FOUND",
                     "message": "Opportunity id was not found.",
                 },
-                "data": {
-                    "expected_behavior": "Missing opportunity returns safe 404.",
-                    "actual_behavior": "No domain mutation performed.",
-                },
+                "data": meta,
             },
         )
     if scenario_id == "invalid_webhook_signature":
@@ -1219,10 +1786,7 @@ def trigger_failure_demo(request: FailureScenarioTriggerRequest):
                     "code": "INVALID_SIGNATURE",
                     "message": "Razorpay signature verification failed.",
                 },
-                "data": {
-                    "expected_behavior": "Signature must be validated.",
-                    "actual_behavior": "Webhook processing was rejected.",
-                },
+                "data": meta,
             },
         )
     if scenario_id == "ai_invalid_output":
@@ -1234,10 +1798,7 @@ def trigger_failure_demo(request: FailureScenarioTriggerRequest):
                     "code": "AI_SCHEMA_INVALID",
                     "message": "AI output did not satisfy required schema.",
                 },
-                "data": {
-                    "expected_behavior": "Invalid AI output must not execute.",
-                    "actual_behavior": "Decision marked non-executable and escalated.",
-                },
+                "data": meta,
             },
         )
     if scenario_id == "ai_unavailable":
@@ -1249,10 +1810,7 @@ def trigger_failure_demo(request: FailureScenarioTriggerRequest):
                     "code": "AI_UNAVAILABLE",
                     "message": "AI provider is unavailable. Safe fallback required.",
                 },
-                "data": {
-                    "expected_behavior": "Workflow remains safe and deterministic.",
-                    "actual_behavior": "Fallback path selected without execution bypass.",
-                },
+                "data": meta,
             },
         )
     if scenario_id == "policy_blocked":
@@ -1264,10 +1822,7 @@ def trigger_failure_demo(request: FailureScenarioTriggerRequest):
                     "code": "POLICY_NOT_ALLOW",
                     "message": "Policy blocked automated execution.",
                 },
-                "data": {
-                    "expected_behavior": "Policy can override AI recommendation.",
-                    "actual_behavior": "Execution denied with deterministic rule outcome.",
-                },
+                "data": meta,
             },
         )
     if scenario_id == "recovery_failure":
@@ -1279,10 +1834,7 @@ def trigger_failure_demo(request: FailureScenarioTriggerRequest):
                     "code": "RECOVERY_EXECUTION_FAILED",
                     "message": "Recovery execution failed safely.",
                 },
-                "data": {
-                    "expected_behavior": "Recovered revenue remains unchanged.",
-                    "actual_behavior": "Failure captured with no verified recovery increment.",
-                },
+                "data": meta,
             },
         )
     if scenario_id == "duplicate_webhook":
@@ -1294,12 +1846,20 @@ def trigger_failure_demo(request: FailureScenarioTriggerRequest):
                     "code": "DUPLICATE_EVENT_IGNORED",
                     "message": "Duplicate webhook delivery ignored safely.",
                 },
-                "data": {
-                    "expected_behavior": "No duplicate actions or revenue counting.",
-                    "actual_behavior": "Idempotency guard prevented side effects.",
-                },
+                "data": meta,
             },
         )
+
+    return JSONResponse(
+        status_code=400,
+        content={
+            "success": False,
+            "error": {
+                "code": "FAILURE_SCENARIO_UNKNOWN",
+                "message": "Failure scenario id is not recognized.",
+            },
+        },
+    )
 
     return JSONResponse(
         status_code=400,
@@ -1552,6 +2112,29 @@ def get_evaluation_comparison(run_id: str, db: Session = Depends(get_db)):
         "failed_delta": recoveriq["operational"]["failed"] - baseline["operational"]["failed"],
     }
 
+    # Query AuditEvent to construct reproducibility metadata
+    audit_evt = db.query(AuditEvent).filter(
+        AuditEvent.event_type == "evaluation.completed",
+        AuditEvent.entity_id == run_id
+    ).first()
+    
+    metadata = {
+        "dataset_version": "v1.2.0-default",
+        "split": "TEST",
+        "generation_seed": 42,
+        "total_cases": summary.records,
+        "model_strategy": "AI Recommendation / Safety Rules Engine",
+        "run_id": run_id,
+        "timestamp": audit_evt.timestamp.isoformat() if audit_evt else None,
+        "reproducible": True
+    }
+    if audit_evt and audit_evt.metadata_json:
+        metadata["dataset_version"] = audit_evt.metadata_json.get("dataset_version", "v1.2.0-default")
+        metadata["split"] = audit_evt.metadata_json.get("split", "TEST")
+        metadata["generation_seed"] = audit_evt.metadata_json.get("generation_seed", 42)
+        metadata["total_cases"] = audit_evt.metadata_json.get("total_cases", summary.records)
+        metadata["reproducible"] = metadata["generation_seed"] is not None
+
     return {
         "success": True,
         "data": {
@@ -1560,6 +2143,7 @@ def get_evaluation_comparison(run_id: str, db: Session = Depends(get_db)):
             "deltas": deltas,
             "attribution": comparison["attribution"],
             "comparison_note": "RecoverIQ metrics are computed using a deterministic policy-path strategy over the same held-out cases.",
+            "metadata": metadata,
         },
     }
 

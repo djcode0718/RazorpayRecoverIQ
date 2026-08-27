@@ -1,6 +1,7 @@
 import hashlib
 import hmac
 import json
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from sqlalchemy import select
@@ -110,7 +111,7 @@ def seed_core_recovery_demo(db: Session) -> dict[str, Any]:
 
     reset_core_recovery_data(db)
 
-    base_time = 1724302000
+    base_time = int((datetime.now(UTC) - timedelta(days=5)).timestamp())
     failed_cases = [
         ("evt_demo_001", "pay_demo_001", "order_demo_001", 240000, "network", "card"),
         ("evt_demo_002", "pay_demo_002", "order_demo_002", 310000, "issuer_declined", "card"),
@@ -135,7 +136,7 @@ def seed_core_recovery_demo(db: Session) -> dict[str, Any]:
                     event_id=event_id,
                     payment_id=payment_id,
                     order_id=order_id,
-                    created_at=base_time + (index * 10),
+                    created_at=base_time + (index * 36000),
                     amount_minor=amount,
                     reason=reason,
                     method=method,
@@ -152,7 +153,7 @@ def seed_core_recovery_demo(db: Session) -> dict[str, Any]:
                 event_id="evt_demo_012",
                 payment_id="pay_demo_012",
                 order_id="order_demo_012",
-                created_at=base_time + 110,
+                created_at=base_time + (11 * 36000) + 120,
                 amount_minor=140000,
                 reason="network",
                 method="card",
@@ -169,7 +170,7 @@ def seed_core_recovery_demo(db: Session) -> dict[str, Any]:
                 event_id="evt_demo_cap_001",
                 payment_id="pay_demo_001",
                 order_id="order_demo_001",
-                created_at=base_time + 500,
+                created_at=base_time + 7200,
                 amount_minor=240000,
             ),
             secret,
@@ -182,7 +183,7 @@ def seed_core_recovery_demo(db: Session) -> dict[str, Any]:
                 event_id="evt_demo_cap_002",
                 payment_id="pay_demo_002",
                 order_id="order_demo_002",
-                created_at=base_time + 510,
+                created_at=base_time + 36000 + 7200,
                 amount_minor=310000,
             ),
             secret,
