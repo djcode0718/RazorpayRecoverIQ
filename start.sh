@@ -29,6 +29,10 @@ fi
 
 export PYTHONPATH="$ROOT_DIR/backend"
 
+# Free ports if already in use by stale processes
+lsof -ti :"$BACKEND_PORT" | xargs kill -9 >/dev/null 2>&1 || true
+lsof -ti :"$FRONTEND_PORT" | xargs kill -9 >/dev/null 2>&1 || true
+
 "$PYTHON_BIN" -m uvicorn app.main:app --app-dir backend --host "$HOST" --port "$BACKEND_PORT" &
 BACKEND_PID=$!
 

@@ -382,16 +382,17 @@ body.drawer-open {
 
 .health-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
   gap: var(--space-md);
 }
 
 .health-item {
   border: 1px solid var(--line);
   border-radius: var(--radius-md);
-  padding: var(--space-lg);
+  padding: var(--space-md) var(--space-lg);
   background: var(--panel-soft);
   transition: all 0.15s ease;
+  min-width: 0;
 }
 
 .health-item:hover {
@@ -403,14 +404,27 @@ body.drawer-open {
 .health-head {
   display: flex;
   justify-content: space-between;
-  gap: var(--space-sm);
+  gap: var(--space-xs);
   align-items: center;
+  flex-wrap: wrap;
   font-weight: 600;
   font-size: 14px;
 }
 
+.health-head span {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+  flex-shrink: 1;
+}
+
+.health-head .badge {
+  flex-shrink: 0;
+}
+
 .health-item p {
-  margin: var(--space-sm) 0 0;
+  margin: var(--space-xs) 0 0;
   font-size: 13px;
   color: var(--text-soft);
   line-height: 1.4;
@@ -3377,6 +3391,122 @@ body.drawer-open {
   font-size: 0.85rem;
   color: #475569;
 }
+
+/* Localized Widget Error Banner Styles */
+.widget-error-box {
+  background: #fff5f5;
+  border: 1px solid #feb2b2;
+  border-radius: var(--radius-md);
+  padding: var(--space-md) var(--space-lg);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-md);
+  margin: var(--space-sm) 0;
+  box-shadow: var(--shadow-sm);
+}
+
+.widget-error-box p {
+  margin: 0;
+  font-size: 0.85rem;
+  color: #c53030;
+  font-weight: 500;
+  line-height: 1.4;
+}
+
+.btn-inline-retry {
+  background: #c53030;
+  color: #ffffff;
+  border: none;
+  font-size: 0.75rem;
+  font-weight: 700;
+  padding: 4px 10px;
+  border-radius: var(--radius-xs);
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.btn-inline-retry:hover {
+  background: #9b2c2c;
+}
+
+/* Redesigned Execution Status Grid & Tooltips */
+.execution-status-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: var(--space-md);
+  margin-top: var(--space-md);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  padding: var(--space-md);
+  border-radius: var(--radius-md);
+}
+
+.status-metric-item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.status-metric-item .control-label {
+  font-size: 0.65rem;
+  font-weight: 700;
+  color: var(--slate-mute);
+  text-transform: uppercase;
+}
+
+.status-metric-item .control-value {
+  font-size: 1rem;
+  font-weight: 800;
+}
+
+.status-metric-item .control-value.status-succeeded,
+.status-metric-item .control-value.verification-verified,
+.status-metric-item .control-value.outcome-recovered {
+  color: var(--color-good);
+}
+
+.status-metric-item .control-value.status-failed,
+.status-metric-item .control-value.verification-failed,
+.status-metric-item .control-value.outcome-failed {
+  color: var(--color-bad);
+}
+
+.status-metric-item .control-value.status-running,
+.status-metric-item .control-value.verification-pending,
+.status-metric-item .control-value.outcome-pending {
+  color: var(--color-warn);
+}
+
+.control-microcopy {
+  font-size: 0.68rem;
+  color: var(--slate-mute);
+  line-height: 1.3;
+}
+
+/* Execution Mode Badge */
+.execution-mode-badge {
+  display: inline-block;
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: var(--radius-xs);
+  text-transform: uppercase;
+}
+
+.execution-mode-badge.sim {
+  background: #ebf8ff;
+  color: #2b6cb0;
+  border: 1px solid #bee3f8;
+}
+
+.execution-mode-badge.live {
+  background: #feebc8;
+  color: #dd6b20;
+  border: 1px solid #fbd38d;
+}
+
+
 
 
 

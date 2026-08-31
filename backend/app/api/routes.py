@@ -126,21 +126,50 @@ def _serialize_opportunity_list_item(
         if isinstance(evidence_bucket, str) and evidence_bucket.strip():
             risk_bucket = evidence_bucket.strip().lower()
 
-    business_outcome = None
+    # 1. Lifecycle status
+    lifecycle_status = "OPEN"
+    if opportunity.status in {"RESOLVED", "VERIFIED_RECOVERED"}:
+        lifecycle_status = "RESOLVED"
+    elif opportunity.status in {"CLOSED", "POLICY_BLOCKED", "ESCALATED", "PAYMENT_FAILED", "RECOVERY_FAILED"}:
+        lifecycle_status = "CLOSED"
+
+    # 2. Execution Status
+    execution_status = "NOT_EXECUTED"
     if latest_attempt is not None:
-        if latest_attempt.verified_outcome == "VERIFIED_SUCCESS" and latest_attempt.recovered_amount_minor > 0:
-            business_outcome = "RECOVERED"
+        if latest_attempt.status in {"REQUESTED", "PENDING"}:
+            execution_status = "RUNNING"
+        elif latest_attempt.status == "FAILED":
+            execution_status = "FAILED"
+        elif latest_attempt.status in {"EXECUTED", "VERIFIED", "VERIFICATION_PENDING", "PENDING_VERIFICATION"}:
+            execution_status = "SUCCEEDED"
+
+    # 3. Verification Status
+    verification_status = "UNVERIFIED"
+    if latest_attempt is not None:
+        if latest_attempt.status == "VERIFIED":
+            verification_status = "VERIFIED"
+        elif latest_attempt.status in {"PENDING_VERIFICATION", "VERIFICATION_PENDING"}:
+            verification_status = "PENDING"
+        else:
+            verification_status = "UNVERIFIED"
+
+    # 4. Outcome
+    outcome = "PENDING"
+    if latest_attempt is not None:
+        if latest_attempt.verified_outcome == "VERIFIED_SUCCESS":
+            outcome = "RECOVERED"
         elif latest_attempt.verified_outcome == "VERIFIED_FAILURE":
-            business_outcome = "NOT_RECOVERED"
-        elif latest_attempt.status in {"REQUESTED", "EXECUTED", "PENDING", "PENDING_VERIFICATION", "VERIFICATION_PENDING"}:
-            business_outcome = "RECOVERY_PAYMENT_PENDING"
-    if business_outcome is None and policy_evaluation is not None and policy_evaluation.result in {"BLOCK", "ESCALATE"}:
-        business_outcome = "NOT_RECOVERED"
+            outcome = "FAILED"
+        elif latest_attempt.status == "FAILED":
+            outcome = "FAILED"
+    elif policy_evaluation is not None and policy_evaluation.result in {"BLOCK", "ESCALATE"}:
+        outcome = "FAILED"
 
     return {
         "id": opportunity.id,
         "customer_reference": f"CUST-{opportunity.customer_id}" if opportunity.customer_id is not None else "UNKNOWN",
         "status": opportunity.status,
+        "lifecycle_status": lifecycle_status,
         "failure_category": opportunity.failure_category,
         "failure_reason": opportunity.failure_reason,
         "recommended_action": opportunity.recommended_action,
@@ -153,7 +182,9 @@ def _serialize_opportunity_list_item(
         "policy_result": policy_evaluation.result if policy_evaluation else None,
         "latest_attempt_status": latest_attempt.status if latest_attempt else None,
         "latest_verified_outcome": latest_attempt.verified_outcome if latest_attempt else None,
-        "business_outcome_status": business_outcome,
+        "execution_status": execution_status,
+        "verification_status": verification_status,
+        "outcome": outcome,
         "updated_at": opportunity.updated_at.isoformat() if opportunity.updated_at else None,
     }
 
@@ -497,13 +528,13 @@ def get_dashboard_trend(db: Session = Depends(get_db)):
         
         recovered_sum = db.execute(
             select(func.coalesce(func.sum(RecoveryAttempt.recovered_amount_minor), 0))
-            .where(RecoveryAttempt.created_at >= start_dt, RecoveryAttempt.created_at <= end_dt)
+            .where(RecoveryAttempt.requested_at >= start_dt, RecoveryAttempt.requested_at <= end_dt)
             .where(RecoveryAttempt.verified_outcome == "VERIFIED_SUCCESS")
         ).scalar_one()
         
         attempts_count = db.execute(
             select(func.count(RecoveryAttempt.id))
-            .where(RecoveryAttempt.created_at >= start_dt, RecoveryAttempt.created_at <= end_dt)
+            .where(RecoveryAttempt.requested_at >= start_dt, RecoveryAttempt.requested_at <= end_dt)
         ).scalar_one()
         
         stats.append({
@@ -518,7 +549,7 @@ def get_dashboard_trend(db: Session = Depends(get_db)):
 
 
 @router.get("/dashboard/events")
-def get_dashboard_events(db: Session = Depends(get_db), limit: int = Query(default=20, ge=1, le=100)):
+def get_dashboard_events(db: Session = Depends(get_db), limit: int = 20):
     events = db.execute(
         select(AuditEvent)
         .order_by(AuditEvent.id.desc())
@@ -536,7 +567,7 @@ def get_dashboard_events(db: Session = Depends(get_db), limit: int = Query(defau
                 "entity_id": event.entity_id,
                 "result": event.result,
                 "reason": event.reason,
-                "created_at": event.created_at.isoformat()
+                "created_at": event.timestamp.isoformat() if event.timestamp else None
             }
             for event in events
         ]
@@ -560,7 +591,20 @@ def list_opportunities(
     bounded_page_size = min(max(page_size, 1), 100)
     query = select(RevenueOpportunity)
     if status:
-        query = query.where(RevenueOpportunity.status == status)
+        status_upper = status.strip().upper()
+        if status_upper == "OPEN":
+            query = query.where(RevenueOpportunity.status.in_([
+                "OPEN", "IDENTIFIED", "ANALYZED", "RECOMMENDED", "POLICY_ALLOWED",
+                "PAYMENT_LINK_CREATED", "PAYMENT_PENDING", "PAYMENT_SUCCESSFUL"
+            ]))
+        elif status_upper == "RESOLVED":
+            query = query.where(RevenueOpportunity.status.in_(["RESOLVED", "VERIFIED_RECOVERED"]))
+        elif status_upper == "CLOSED":
+            query = query.where(RevenueOpportunity.status.in_([
+                "CLOSED", "POLICY_BLOCKED", "ESCALATED", "PAYMENT_FAILED", "RECOVERY_FAILED"
+            ]))
+        else:
+            query = query.where(RevenueOpportunity.status == status)
     if action:
         query = query.where(RevenueOpportunity.recommended_action == action)
 
@@ -769,7 +813,7 @@ def list_opportunities(
 
 
 @router.get("/opportunities/{opportunity_id}")
-def get_opportunity_detail(opportunity_id: int, db: Session = Depends(get_db)):
+def get_opportunity_detail(opportunity_id: int, db: Session = Depends(get_db), settings: Settings = Depends(get_settings)):
     opportunity = db.execute(
         select(RevenueOpportunity).where(RevenueOpportunity.id == opportunity_id)
     ).scalar_one_or_none()
@@ -1141,10 +1185,53 @@ def get_opportunity_detail(opportunity_id: int, db: Session = Depends(get_db)):
                 stage_obj["details"]["event_id"] = audit.id
                 stage_obj["details"]["correlation_id"] = audit.correlation_id or stage_obj["details"].get("correlation_id")
 
+    # 1. Lifecycle status
+    lifecycle_status = "OPEN"
+    if opportunity.status in {"RESOLVED", "VERIFIED_RECOVERED"}:
+        lifecycle_status = "RESOLVED"
+    elif opportunity.status in {"CLOSED", "POLICY_BLOCKED", "ESCALATED", "PAYMENT_FAILED", "RECOVERY_FAILED"}:
+        lifecycle_status = "CLOSED"
+
+    # 2. Execution Status
+    execution_status = "NOT_EXECUTED"
+    if attempts:
+        latest_attempt = attempts[-1]
+        if latest_attempt.status in {"REQUESTED", "PENDING"}:
+            execution_status = "RUNNING"
+        elif latest_attempt.status == "FAILED":
+            execution_status = "FAILED"
+        elif latest_attempt.status in {"EXECUTED", "VERIFIED", "VERIFICATION_PENDING", "PENDING_VERIFICATION"}:
+            execution_status = "SUCCEEDED"
+
+    # 3. Verification Status
+    verification_status = "UNVERIFIED"
+    if attempts:
+        latest_attempt = attempts[-1]
+        if latest_attempt.status == "VERIFIED":
+            verification_status = "VERIFIED"
+        elif latest_attempt.status in {"PENDING_VERIFICATION", "VERIFICATION_PENDING"}:
+            verification_status = "PENDING"
+        else:
+            verification_status = "UNVERIFIED"
+
+    # 4. Outcome
+    outcome = "PENDING"
+    if attempts:
+        latest_attempt = attempts[-1]
+        if latest_attempt.verified_outcome == "VERIFIED_SUCCESS":
+            outcome = "RECOVERED"
+        elif latest_attempt.verified_outcome == "VERIFIED_FAILURE":
+            outcome = "FAILED"
+        elif latest_attempt.status == "FAILED":
+            outcome = "FAILED"
+    elif policy is not None and policy.result in {"BLOCK", "ESCALATE"}:
+        outcome = "FAILED"
+
     data = {
         "opportunity": {
             "id": opportunity.id,
             "status": opportunity.status,
+            "lifecycle_status": lifecycle_status,
             "failure_category": opportunity.failure_category,
             "failure_reason": opportunity.failure_reason,
             "recommended_action": opportunity.recommended_action,
@@ -1201,6 +1288,10 @@ def get_opportunity_detail(opportunity_id: int, db: Session = Depends(get_db)):
             "latest_attempt_status": attempts[-1].status if attempts else None,
             "latest_verified_outcome": attempts[-1].verified_outcome if attempts else None,
             "attempt_count": len(attempts),
+            "execution_status": execution_status,
+            "verification_status": verification_status,
+            "outcome": outcome,
+            "execution_mode": settings.payment_adapter_mode,
         },
         "semantic_states": semantic_states,
         "recovery_state": recovery_state,
@@ -1220,6 +1311,11 @@ def get_opportunity_detail(opportunity_id: int, db: Session = Depends(get_db)):
                         "payment_link_id": link_by_attempt_id[attempt.id].payment_link_id,
                         "payment_link_reference_id": link_by_attempt_id[attempt.id].payment_link_reference_id,
                         "status": link_by_attempt_id[attempt.id].status,
+                        "short_url": (
+                            json.loads(link_by_attempt_id[attempt.id].external_response_reference).get("short_url")
+                            if link_by_attempt_id[attempt.id].external_response_reference
+                            else None
+                        ) if link_by_attempt_id[attempt.id].external_response_reference else None,
                     }
                     if attempt.id in link_by_attempt_id
                     else None
@@ -1406,6 +1502,31 @@ def execute_opportunity(opportunity_id: int, db: Session = Depends(get_db)):
         .order_by(RecoveryPaymentLink.id.desc())
     ).scalars().first()
 
+    # 2. Execution Status
+    execution_status = "NOT_EXECUTED"
+    if attempt.status in {"REQUESTED", "PENDING"}:
+        execution_status = "RUNNING"
+    elif attempt.status == "FAILED":
+        execution_status = "FAILED"
+    elif attempt.status in {"EXECUTED", "VERIFIED", "VERIFICATION_PENDING", "PENDING_VERIFICATION"}:
+        execution_status = "SUCCEEDED"
+
+    # 3. Verification Status
+    verification_status = "UNVERIFIED"
+    if attempt.status == "VERIFIED":
+        verification_status = "VERIFIED"
+    elif attempt.status in {"PENDING_VERIFICATION", "VERIFICATION_PENDING"}:
+        verification_status = "PENDING"
+
+    # 4. Outcome
+    outcome = "PENDING"
+    if attempt.verified_outcome == "VERIFIED_SUCCESS":
+        outcome = "RECOVERED"
+    elif attempt.verified_outcome == "VERIFIED_FAILURE":
+        outcome = "FAILED"
+    elif attempt.status == "FAILED":
+        outcome = "FAILED"
+
     return {
         "success": True,
         "data": {
@@ -1413,6 +1534,9 @@ def execute_opportunity(opportunity_id: int, db: Session = Depends(get_db)):
             "attempt_id": attempt.id,
             "attempt_status": attempt.status,
             "verified_outcome": attempt.verified_outcome,
+            "execution_status": execution_status,
+            "verification_status": verification_status,
+            "outcome": outcome,
             "payment_link": (
                 {
                     "payment_link_id": payment_link.payment_link_id,
@@ -1962,12 +2086,14 @@ def execute_phase13_readiness(db: Session = Depends(get_db)) -> dict:
 @router.post("/demo/seed-core-recovery")
 def seed_core_recovery(db: Session = Depends(get_db)) -> dict:
     result = seed_core_recovery_demo(db)
+    db.commit()
     return {"success": True, "data": result}
 
 
 @router.post("/demo/reset-core-recovery")
 def reset_core_recovery(db: Session = Depends(get_db), settings: Settings = Depends(get_settings)) -> dict:
     reset_core_recovery_data(db)
+    db.commit()
     return {
         "success": True,
         "data": {

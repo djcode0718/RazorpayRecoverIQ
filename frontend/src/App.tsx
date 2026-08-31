@@ -58,6 +58,7 @@ type OpportunityListItem = {
   id: number;
   customer_reference: string;
   status: string;
+  lifecycle_status: "OPEN" | "RESOLVED" | "CLOSED";
   failure_category: string | null;
   failure_reason: string | null;
   recommended_action: string | null;
@@ -70,7 +71,9 @@ type OpportunityListItem = {
   policy_result: string | null;
   latest_attempt_status: string | null;
   latest_verified_outcome: string | null;
-  business_outcome_status?: string | null;
+  execution_status: "NOT_EXECUTED" | "RUNNING" | "SUCCEEDED" | "FAILED";
+  verification_status: "UNVERIFIED" | "PENDING" | "VERIFIED";
+  outcome: "PENDING" | "RECOVERED" | "FAILED" | "EXPIRED";
   updated_at: string | null;
 };
 
@@ -78,6 +81,7 @@ type OpportunityDetail = {
   opportunity: {
     id: number;
     status: string;
+    lifecycle_status: "OPEN" | "RESOLVED" | "CLOSED";
     failure_category: string | null;
     failure_reason: string | null;
     recommended_action: string | null;
@@ -143,6 +147,10 @@ type OpportunityDetail = {
     latest_attempt_status: string | null;
     latest_verified_outcome: string | null;
     attempt_count: number;
+    execution_status: "NOT_EXECUTED" | "RUNNING" | "SUCCEEDED" | "FAILED";
+    verification_status: "UNVERIFIED" | "PENDING" | "VERIFIED";
+    outcome: "PENDING" | "RECOVERED" | "FAILED" | "EXPIRED";
+    execution_mode: string;
   };
   semantic_states?: {
     original_payment: string | null;
@@ -174,6 +182,7 @@ type OpportunityDetail = {
       payment_link_id: string;
       payment_link_reference_id: string;
       status: string;
+      short_url?: string | null;
     } | null;
   }>;
   timeline: Array<{
@@ -544,6 +553,50 @@ function isLikelyUrl(value: string): boolean {
   return /^https?:\/\//i.test(value);
 }
 
+function getActionStateBanner(det: OpportunityDetail) {
+  const execStatus = det.action_traceability.execution_status;
+  const verStatus = det.action_traceability.verification_status;
+  const outcome = det.action_traceability.outcome;
+
+  if (execStatus === "NOT_EXECUTED") {
+    return {
+      text: "Recovery action is ready for execution.",
+      className: "info"
+    };
+  }
+  if (execStatus === "RUNNING") {
+    return {
+      text: "Executing recovery action...",
+      className: "warn"
+    };
+  }
+  if (execStatus === "FAILED") {
+    return {
+      text: "Recovery action failed. No revenue was recovered.",
+      className: "error"
+    };
+  }
+  if (execStatus === "SUCCEEDED") {
+    if (verStatus === "VERIFIED" && outcome === "RECOVERED") {
+      return {
+        text: "Recovery verified successfully.",
+        className: "success"
+      };
+    }
+    if (verStatus === "PENDING" || outcome === "PENDING") {
+      return {
+        text: "Recovery action executed successfully. Verification is pending...",
+        className: "success"
+      };
+    }
+    return {
+      text: "Recovery action executed successfully.",
+      className: "success"
+    };
+  }
+  return null;
+}
+
 function serializeEvidence(value: unknown): string {
   try {
     return JSON.stringify(value, null, 2);
@@ -694,42 +747,87 @@ export function App() {
   const [isDemoMutating, setIsDemoMutating] = useState<boolean>(false);
 
   const [error, setError] = useState<string | null>(null);
+  const [summaryError, setSummaryError] = useState<string | null>(null);
+  const [trendError, setTrendError] = useState<string | null>(null);
+  const [eventsError, setEventsError] = useState<string | null>(null);
+  const [razorpayStatusError, setRazorpayStatusError] = useState<string | null>(null);
+  const [opportunitiesError, setOpportunitiesError] = useState<string | null>(null);
+  const [evaluationHistoryError, setEvaluationHistoryError] = useState<string | null>(null);
+  const [failureScenariosError, setFailureScenariosError] = useState<string | null>(null);
+
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isOpportunityLoading, setIsOpportunityLoading] = useState<boolean>(false);
   const [isDetailLoading, setIsDetailLoading] = useState<boolean>(false);
   const [autoRefreshEnabled, setAutoRefreshEnabled] = useState<boolean>(false);
 
+  const safeFetch = async (url: string, init?: RequestInit): Promise<Response> => {
+    try {
+      return await fetch(url, init);
+    } catch (err) {
+      throw new Error("Unable to reach the RecoverIQ API.");
+    }
+  };
+
+  const checkResponseError = async (response: Response, defaultMessage: string) => {
+    if (response.status === 401 || response.status === 403) {
+      throw new Error("Access denied.");
+    }
+    if (response.status === 422) {
+      throw new Error("Dashboard data could not be validated.");
+    }
+    if (response.status === 503) {
+      throw new Error("Recovery data is temporarily unavailable.");
+    }
+    if (response.status >= 500) {
+      throw new Error("RecoverIQ API returned an unexpected error.");
+    }
+    if (!response.ok) {
+      let msg = defaultMessage;
+      try {
+        const payload = await response.json();
+        if (payload && payload.error && payload.error.message) {
+          msg = payload.error.message;
+        }
+      } catch (_) {}
+      throw new Error(msg);
+    }
+  };
+
   const loadSummary = async () => {
-    const response = await fetch("/api/v1/dashboard/summary");
+    const response = await safeFetch("/api/v1/dashboard/summary");
+    await checkResponseError(response, "Unable to load dashboard summary.");
     const payload = (await response.json()) as SummaryResponse;
-    if (!response.ok || !payload.success || !payload.data) {
+    if (!payload.success || !payload.data) {
       throw new Error(payload.error?.message || "Unable to load dashboard summary.");
     }
     setSummary(payload.data);
   };
 
   const loadDashboardTrend = async () => {
-    const response = await fetch("/api/v1/dashboard/trend");
+    const response = await safeFetch("/api/v1/dashboard/trend");
+    await checkResponseError(response, "Unable to load dashboard trend.");
     const payload = (await response.json()) as { success: boolean; data?: TrendDataPoint[]; error?: { message?: string } };
-    if (!response.ok || !payload.success || !payload.data) {
+    if (!payload.success || !payload.data) {
       throw new Error(payload.error?.message || "Unable to load dashboard trend.");
     }
     setDashboardTrend(payload.data);
   };
 
   const loadDashboardEvents = async () => {
-    const response = await fetch("/api/v1/dashboard/events");
+    const response = await safeFetch("/api/v1/dashboard/events");
+    await checkResponseError(response, "Unable to load dashboard event stream.");
     const payload = (await response.json()) as { success: boolean; data?: DashboardEvent[]; error?: { message?: string } };
-    if (!response.ok || !payload.success || !payload.data) {
+    if (!payload.success || !payload.data) {
       throw new Error(payload.error?.message || "Unable to load dashboard event stream.");
     }
     setDashboardEvents(payload.data);
   };
 
   const loadRazorpayStatus = async () => {
-    const response = await fetch("/api/v1/integrations/razorpay/status");
+    const response = await safeFetch("/api/v1/integrations/razorpay/status");
+    await checkResponseError(response, "Unable to load Razorpay integration status.");
     const payload = (await response.json()) as RazorpayStatusResponse;
-    if (!response.ok || !payload.success || !payload.data) {
+    if (!payload.success || !payload.data) {
       throw new Error(payload.error?.message || "Unable to load Razorpay integration status.");
     }
     setRazorpayStatus(payload.data);
@@ -755,46 +853,44 @@ export function App() {
       query.set("search", searchFilter.trim());
     }
 
-    const response = await fetch(`/api/v1/opportunities?${query.toString()}`);
-    const payload = (await response.json()) as OpportunityListResponse;
-    if (!response.ok || !payload.success || !payload.data) {
+    try {
+      const response = await safeFetch(`/api/v1/opportunities?${query.toString()}`);
+      await checkResponseError(response, "Unable to load opportunities.");
+      const payload = (await response.json()) as OpportunityListResponse;
+      if (!payload.success || !payload.data) {
+        throw new Error(payload.error?.message || "Unable to load opportunities.");
+      }
+
+      setOpportunities(payload.data.items);
+      setOpportunityTotalCount(payload.data.total_count);
+      setOpportunityTotalPages(payload.data.total_pages);
+      setOpportunityHasNext(payload.data.has_next);
+      setOpportunityHasPrev(payload.data.has_prev);
+
+      if (payload.data.items.length === 0) {
+        setSelectedOpportunityId(null);
+        setDetail(null);
+        return;
+      }
+
+      const hasSelected = payload.data.items.some((item) => item.id === selectedOpportunityId);
+      if (!hasSelected) {
+        setSelectedOpportunityId(null);
+      }
+    } finally {
       if (showLoader) {
         setIsOpportunityLoading(false);
       }
-      throw new Error(payload.error?.message || "Unable to load opportunities.");
-    }
-
-    setOpportunities(payload.data.items);
-    setOpportunityTotalCount(payload.data.total_count);
-    setOpportunityTotalPages(payload.data.total_pages);
-    setOpportunityHasNext(payload.data.has_next);
-    setOpportunityHasPrev(payload.data.has_prev);
-
-    if (payload.data.items.length === 0) {
-      setSelectedOpportunityId(null);
-      setDetail(null);
-      if (showLoader) {
-        setIsOpportunityLoading(false);
-      }
-      return;
-    }
-
-    const hasSelected = payload.data.items.some((item) => item.id === selectedOpportunityId);
-    if (!hasSelected) {
-      setSelectedOpportunityId(null);
-    }
-
-    if (showLoader) {
-      setIsOpportunityLoading(false);
     }
   };
 
   const loadOpportunityDetail = async (opportunityId: number) => {
     setIsDetailLoading(true);
     try {
-      const response = await fetch(`/api/v1/opportunities/${opportunityId}`);
+      const response = await safeFetch(`/api/v1/opportunities/${opportunityId}`);
+      await checkResponseError(response, "Unable to load opportunity detail.");
       const payload = (await response.json()) as OpportunityDetailResponse;
-      if (!response.ok || !payload.success || !payload.data) {
+      if (!payload.success || !payload.data) {
         throw new Error(payload.error?.message || "Unable to load opportunity detail.");
       }
       setDetail(payload.data);
@@ -827,9 +923,10 @@ export function App() {
   };
 
   const loadEvaluationHistory = async () => {
-    const response = await fetch("/api/v1/evaluation/history?limit=10");
+    const response = await safeFetch("/api/v1/evaluation/history?limit=10");
+    await checkResponseError(response, "Unable to load evaluation history.");
     const payload = (await response.json()) as EvaluationHistoryResponse;
-    if (!response.ok || !payload.success || !payload.data) {
+    if (!payload.success || !payload.data) {
       throw new Error(payload.error?.message || "Unable to load evaluation history.");
     }
     setEvaluationHistory(payload.data.items);
@@ -842,17 +939,20 @@ export function App() {
     setIsEvaluationLoading(true);
     try {
       const [comparisonResponse, drilldownResponse] = await Promise.all([
-        fetch(`/api/v1/evaluation/${runId}/comparison`),
-        fetch(`/api/v1/evaluation/${runId}/drilldown`),
+        safeFetch(`/api/v1/evaluation/${runId}/comparison`),
+        safeFetch(`/api/v1/evaluation/${runId}/drilldown`),
       ]);
+
+      await checkResponseError(comparisonResponse, "Unable to load evaluation comparison.");
+      await checkResponseError(drilldownResponse, "Unable to load evaluation drilldown.");
 
       const comparisonPayload = (await comparisonResponse.json()) as EvaluationComparisonResponse;
       const drilldownPayload = (await drilldownResponse.json()) as EvaluationDrilldownResponse;
 
-      if (!comparisonResponse.ok || !comparisonPayload.success || !comparisonPayload.data) {
+      if (!comparisonPayload.success || !comparisonPayload.data) {
         throw new Error(comparisonPayload.error?.message || "Unable to load evaluation comparison.");
       }
-      if (!drilldownResponse.ok || !drilldownPayload.success || !drilldownPayload.data) {
+      if (!drilldownPayload.success || !drilldownPayload.data) {
         throw new Error(drilldownPayload.error?.message || "Unable to load evaluation drilldown.");
       }
 
@@ -866,7 +966,7 @@ export function App() {
   const runEvaluation = async () => {
     setIsRunSubmitting(true);
     try {
-      const response = await fetch("/api/v1/evaluation/run", {
+      const response = await safeFetch("/api/v1/evaluation/run", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
@@ -877,8 +977,9 @@ export function App() {
           generate_if_missing: true,
         }),
       });
+      await checkResponseError(response, "Unable to run evaluation.");
       const payload = (await response.json()) as EvaluationRunResponse;
-      if (!response.ok || !payload.success || !payload.data) {
+      if (!payload.success || !payload.data) {
         throw new Error(payload.error?.message || "Unable to run evaluation.");
       }
       const runId = payload.data.evaluation_run_id;
@@ -891,9 +992,10 @@ export function App() {
   };
 
   const loadFailureScenarios = async () => {
-    const response = await fetch("/api/v1/failure-demos");
+    const response = await safeFetch("/api/v1/failure-demos");
+    await checkResponseError(response, "Unable to load failure scenarios.");
     const payload = (await response.json()) as FailureScenariosResponse;
-    if (!response.ok || !payload.success || !payload.data) {
+    if (!payload.success || !payload.data) {
       throw new Error(payload.error?.message || "Unable to load failure scenarios.");
     }
     setFailureScenarios(payload.data.scenarios);
@@ -972,27 +1074,31 @@ export function App() {
   const loadCommandCenter = async () => {
     setIsLoading(true);
     setError(null);
+    setSummaryError(null);
+    setTrendError(null);
+    setEventsError(null);
+    setRazorpayStatusError(null);
+    setOpportunitiesError(null);
+    setEvaluationHistoryError(null);
+    setFailureScenariosError(null);
     setSelectedOpportunityId(null);
     setDetail(null);
-    try {
-      await Promise.all([
-        loadSummary(),
-        loadOpportunities(false),
-        loadEvaluationHistory(),
-        loadFailureScenarios(),
-        loadRazorpayStatus(),
-        loadDashboardTrend(),
-        loadDashboardEvents(),
-      ]);
-      if (selectedEvaluationRunId) {
-        await loadEvaluationRunInsights(selectedEvaluationRunId);
-      }
-    } catch (fetchError) {
-      const message = fetchError instanceof Error ? fetchError.message : "Unable to load command center data.";
-      setError(message);
-    } finally {
-      setIsLoading(false);
-    }
+
+    const promises = [
+      loadSummary().catch((err) => {
+        setSummaryError(err.message);
+        setError(err.message); // Set primary dashboard error if summary fails
+      }),
+      loadOpportunities(false).catch((err) => setOpportunitiesError(err.message)),
+      loadEvaluationHistory().catch((err) => setEvaluationHistoryError(err.message)),
+      loadFailureScenarios().catch((err) => setFailureScenariosError(err.message)),
+      loadRazorpayStatus().catch((err) => setRazorpayStatusError(err.message)),
+      loadDashboardTrend().catch((err) => setTrendError(err.message)),
+      loadDashboardEvents().catch((err) => setEventsError(err.message)),
+    ];
+
+    await Promise.all(promises);
+    setIsLoading(false);
   };
 
   useEffect(() => {
@@ -1393,7 +1499,12 @@ export function App() {
                     </div>
                     <p className="panel-copy">Real-time system actions and audit ledger.</p>
                     <div className="event-list-scroll">
-                      {dashboardEvents.length === 0 ? (
+                      {eventsError ? (
+                        <div className="widget-error-box">
+                          <p>{eventsError}</p>
+                          <button onClick={loadDashboardEvents} className="btn btn-inline btn-inline-retry">Retry</button>
+                        </div>
+                      ) : dashboardEvents.length === 0 ? (
                         <div className="empty-state">
                           <p>Waiting for system events...</p>
                         </div>
@@ -1425,7 +1536,14 @@ export function App() {
                   <div className="panel trend-panel" style={{ flex: 2 }}>
                     <h2>Revenue Recovery History</h2>
                     <p className="panel-copy">Comparison of Recovered Revenue vs total Revenue at Risk over the last 7 days.</p>
-                    <DashboardTrendChart data={dashboardTrend} />
+                    {trendError ? (
+                      <div className="widget-error-box">
+                        <p>{trendError}</p>
+                        <button onClick={loadDashboardTrend} className="btn btn-inline btn-inline-retry">Retry</button>
+                      </div>
+                    ) : (
+                      <DashboardTrendChart data={dashboardTrend} />
+                    )}
                   </div>
 
                   {/* System health items */}
@@ -1505,12 +1623,28 @@ export function App() {
                     </div>
                   </div>
 
-                  {isOpportunityLoading ? (
+                  {opportunitiesError ? (
+                    <div className="panel error-panel" style={{ margin: "16px 0" }}>
+                      <h3>Unable to load opportunities</h3>
+                      <p>{opportunitiesError}</p>
+                      <button onClick={() => loadOpportunities(true)} className="btn btn-danger" style={{ marginTop: "12px" }}>
+                        Retry
+                      </button>
+                    </div>
+                  ) : isOpportunityLoading ? (
                     <TableSkeleton />
                   ) : opportunities.length === 0 ? (
                     <div className="empty-state">
-                      <h3>No opportunities found</h3>
-                      <p>Try a broader filter set or seed the simulation.</p>
+                      <h3>No recovery opportunities yet.</h3>
+                      <p>Simulation mode is active. Load the recovery demo scenario to populate failed payments, diagnostic metrics, and audit history.</p>
+                      <button
+                        onClick={() => runDemoMutation("/api/v1/demo/seed-core-recovery")}
+                        disabled={isDemoMutating}
+                        className="btn btn-primary"
+                        style={{ marginTop: "16px" }}
+                      >
+                        {isDemoMutating ? "Seeding Scenario..." : "Load Demo Scenario"}
+                      </button>
                     </div>
                   ) : (
                     <div className="table-wrapper">
@@ -1523,6 +1657,7 @@ export function App() {
                             <th>Expected Recovery</th>
                             <th>Confidence</th>
                             <th>Policy</th>
+                            <th>Status</th>
                             <th>Recovery Action</th>
                             <th>Outcome</th>
                           </tr>
@@ -1554,13 +1689,15 @@ export function App() {
                                   <Badge text={item.policy_result || "PENDING"} tone={toToneForOutcome(item.policy_result)} />
                                 </td>
                                 <td>
+                                  <Badge text={item.lifecycle_status} tone={item.lifecycle_status === "OPEN" ? "neutral" : item.lifecycle_status === "RESOLVED" ? "good" : "bad"} />
+                                </td>
+                                <td>
                                   <p>{item.recommended_action || "NO_ACTION"}</p>
-                                  <p className="row-subtitle">{item.status}</p>
                                 </td>
                                 <td>
                                   <Badge
-                                    text={item.business_outcome_status || item.latest_verified_outcome || item.latest_attempt_status || "PENDING"}
-                                    tone={toToneForOutcome(item.business_outcome_status || item.latest_verified_outcome || item.latest_attempt_status)}
+                                    text={item.outcome}
+                                    tone={toToneForOutcome(item.outcome)}
                                   />
                                 </td>
                               </tr>
@@ -1645,13 +1782,23 @@ export function App() {
                 </div>
 
                 <div className="evaluation-grid">
-                  <article className="evaluation-history">
-                    <h3>Run History</h3>
-                    {evaluationHistory.length === 0 ? (
-                      <p className="helper-message">No evaluation runs available.</p>
-                    ) : (
-                      <div className="run-list">
-                        {evaluationHistory.map((item) => (
+                  {evaluationHistoryError ? (
+                    <div className="panel error-panel" style={{ gridColumn: "span 2", margin: "16px 0" }}>
+                      <h3>Unable to load evaluation history</h3>
+                      <p>{evaluationHistoryError}</p>
+                      <button onClick={loadEvaluationHistory} className="btn btn-danger" style={{ marginTop: "12px" }}>
+                        Retry
+                      </button>
+                    </div>
+                  ) : (
+                    <>
+                      <article className="evaluation-history">
+                        <h3>Run History</h3>
+                        {evaluationHistory.length === 0 ? (
+                          <p className="helper-message">No evaluation runs available.</p>
+                        ) : (
+                          <div className="run-list">
+                            {evaluationHistory.map((item) => (
                           <button
                             key={item.evaluation_run_id}
                             onClick={() => setSelectedEvaluationRunId(item.evaluation_run_id)}
@@ -1847,8 +1994,10 @@ export function App() {
                       </div>
                     ) : null}
                   </article>
-                </div>
-              </section>
+                </>
+              )}
+            </div>
+          </section>
             )}
 
             {activeTab === "Resilience Lab" && (
@@ -1857,8 +2006,17 @@ export function App() {
                   <h2>Resilience Lab</h2>
                   <p className="panel-copy">Controlled validation drills simulating gateway outages, cryptographic signature verification failures, duplicate events, and AI degradation to demonstrate system safety.</p>
 
-                  <div className="resilience-split-grid">
-                    <div className="scenarios-list-column">
+                  {failureScenariosError ? (
+                    <div className="panel error-panel" style={{ margin: "16px 0" }}>
+                      <h3>Unable to load failure scenarios</h3>
+                      <p>{failureScenariosError}</p>
+                      <button onClick={loadFailureScenarios} className="btn btn-danger" style={{ marginTop: "12px" }}>
+                        Retry
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="resilience-split-grid">
+                      <div className="scenarios-list-column">
                       {failureScenarios.map((scenario) => {
                         const isExpanded = expandedScenarioId === scenario.scenario_id;
                         const isCurrentlyActive = activeResilienceScenario?.scenario_id === scenario.scenario_id;
@@ -2113,9 +2271,10 @@ export function App() {
                       )}
                     </div>
                   </div>
-                </section>
-              </div>
-            )}
+                )}
+              </section>
+            </div>
+          )}
 
             {activeTab === "Production Readiness" && (
               <section className="panel production-readiness-panel">
@@ -2476,40 +2635,127 @@ export function App() {
 
                   {/* 7. EXECUTION PANEL */}
                   <section className="execution-control-panel">
-                    <h3>Action Executor Controls</h3>
-                    <div className="execution-status-row">
-                      <div>
-                        <span className="control-label">ACTION TARGET</span>
+                    <div className="panel-header-with-badge">
+                      <h3>Action Executor Controls</h3>
+                      <span className={`execution-mode-badge ${detail.action_traceability.execution_mode === "simulation" ? "sim" : "live"}`}>
+                        MODE: {detail.action_traceability.execution_mode === "simulation" ? "DEMO / SIMULATION" : "RAZORPAY TEST MODE"}
+                      </span>
+                    </div>
+
+                    <div className="execution-status-grid">
+                      <div className="status-metric-item">
+                        <span className="control-label">RECOVERY ACTION</span>
                         <strong className="control-value">{detail.action_traceability.recommended_action || "ESCALATE"}</strong>
+                        <span className="control-microcopy">Recommended action selected to recover the failed payment.</span>
                       </div>
-                      <div>
+                      <div className="status-metric-item">
+                        <span className="control-label">POLICY GATE</span>
+                        <strong className={`control-value policy-${(detail.policy_checks.result || "pending").toLowerCase()}`}>
+                          {detail.policy_checks.result || "PENDING"}
+                        </strong>
+                        <span className="control-microcopy">Whether the policy engine permits this action.</span>
+                      </div>
+                      <div className="status-metric-item">
                         <span className="control-label">EXECUTION STATUS</span>
-                        <strong className={`control-value status-${(detail.attempts && detail.attempts.length > 0 ? detail.attempts[detail.attempts.length - 1].status.toLowerCase() : "not_executed")}`}>
-                          {detail.attempts && detail.attempts.length > 0 ? detail.attempts[detail.attempts.length - 1].status : "NOT_EXECUTED"}
+                        <strong className={`control-value status-${detail.action_traceability.execution_status.toLowerCase()}`}>
+                          {detail.action_traceability.execution_status}
                         </strong>
+                        <span className="control-microcopy">Technical result of executing the recovery action.</span>
                       </div>
-                      <div>
+                      <div className="status-metric-item">
                         <span className="control-label">VERIFIED RESULT</span>
-                        <strong className={`control-value outcome-${(detail.attempts && detail.attempts.length > 0 && detail.attempts[detail.attempts.length - 1].verified_outcome ? (detail.attempts[detail.attempts.length - 1].verified_outcome || "").toLowerCase() : "none")}`}>
-                          {detail.attempts && detail.attempts.length > 0 && detail.attempts[detail.attempts.length - 1].verified_outcome ? detail.attempts[detail.attempts.length - 1].verified_outcome : "UNVERIFIED"}
+                        <strong className={`control-value verification-${detail.action_traceability.verification_status.toLowerCase()}`}>
+                          {detail.action_traceability.verification_status}
                         </strong>
+                        <span className="control-microcopy">Whether the recovery result has been independently verified.</span>
+                      </div>
+                      <div className="status-metric-item">
+                        <span className="control-label">BUSINESS OUTCOME</span>
+                        <strong className={`control-value outcome-${detail.action_traceability.outcome.toLowerCase()}`}>
+                          {detail.action_traceability.outcome}
+                        </strong>
+                        <span className="control-microcopy">Business result of the recovery attempt.</span>
                       </div>
                     </div>
 
-                    {executionMessage && (
-                      <div className={`execution-message-banner ${executionMessage.includes("Triggered") || executionMessage.includes("successfully") ? "success" : "error"}`}>
+                    {(() => {
+                      const stateBanner = getActionStateBanner(detail);
+                      if (stateBanner) {
+                        return (
+                          <div className={`execution-message-banner ${stateBanner.className}`} style={{ marginTop: "16px" }}>
+                            {stateBanner.text}
+                          </div>
+                        );
+                      }
+                      return null;
+                    })()}
+
+                    {executionMessage && !executionMessage.includes("successfully") && !executionMessage.includes("triggered") && (
+                      <div className="execution-message-banner error" style={{ marginTop: "12px" }}>
                         {executionMessage}
                       </div>
                     )}
 
-                    <div className="execution-cta-wrapper">
+                    {(() => {
+                      const latestAttempt = detail.attempts && detail.attempts.length > 0 ? detail.attempts[detail.attempts.length - 1] : null;
+                      const paymentLink = latestAttempt?.payment_link;
+                      if (paymentLink) {
+                        return (
+                          <div className="payment-link-details-box" style={{ marginTop: "16px", padding: "12px", background: "var(--bg)", border: "1px solid var(--line)", borderRadius: "var(--radius-md)" }}>
+                            <h4 style={{ margin: "0 0 8px 0", fontSize: "0.85rem", fontWeight: "700" }}>Created Recovery Payment Link</h4>
+                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px", fontSize: "0.8rem" }}>
+                              <div>
+                                <span style={{ color: "var(--slate-mute)", display: "block" }}>Payment Link ID</span>
+                                <strong>{paymentLink.payment_link_id}</strong>
+                              </div>
+                              <div>
+                                <span style={{ color: "var(--slate-mute)", display: "block" }}>Reference ID</span>
+                                <strong>{paymentLink.payment_link_reference_id}</strong>
+                              </div>
+                              <div>
+                                <span style={{ color: "var(--slate-mute)", display: "block" }}>Status</span>
+                                <strong>{paymentLink.status}</strong>
+                              </div>
+                            </div>
+                            {paymentLink.short_url && isLikelyUrl(paymentLink.short_url) ? (
+                              <a
+                                href={paymentLink.short_url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="btn btn-secondary"
+                                style={{ marginTop: "12px", display: "inline-block", padding: "6px 12px", fontSize: "0.75rem" }}
+                              >
+                                Open Payment Link
+                              </a>
+                            ) : (
+                              <p className="control-microcopy" style={{ marginTop: "10px", margin: "10px 0 0 0" }}>
+                                ℹ️ Simulation Mode: Link URL is mock and not active.
+                              </p>
+                            )}
+                          </div>
+                        );
+                      }
+                      return null;
+                    })()}
+
+                    <div className="execution-cta-wrapper" style={{ marginTop: "16px" }}>
                       {detail.policy_checks.result === "ALLOW" ? (
                         <button
                           className="btn btn-primary btn-execute"
-                          disabled={isExecutingRecovery || (detail.attempts && detail.attempts.length > 0 && detail.attempts[detail.attempts.length - 1].status === "SUCCESS")}
+                          disabled={
+                            isExecutingRecovery ||
+                            detail.action_traceability.execution_status === "RUNNING" ||
+                            detail.action_traceability.outcome === "RECOVERED"
+                          }
                           onClick={() => handleExecuteRecovery(detail.opportunity.id)}
                         >
-                          {isExecutingRecovery ? "Running Executor..." : detail.attempts && detail.attempts.length > 0 && detail.attempts[detail.attempts.length - 1].status === "SUCCESS" ? "Recovery Complete (Success)" : `Execute ${detail.action_traceability.recommended_action}`}
+                          {isExecutingRecovery || detail.action_traceability.execution_status === "RUNNING"
+                            ? "Executing action..."
+                            : detail.action_traceability.outcome === "RECOVERED"
+                            ? "Recovery Complete (Success)"
+                            : detail.action_traceability.execution_status === "FAILED"
+                            ? "Retry Action"
+                            : `Execute ${detail.action_traceability.recommended_action}`}
                         </button>
                       ) : (
                         <div className="blocked-execution-notice">

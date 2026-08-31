@@ -241,3 +241,29 @@ def test_dashboard_summary_mode_reflects_razorpay_test(tmp_path: Path) -> None:
     assert payload["data"]["mode"] == "razorpay_test"
     assert payload["data"]["mode_label"] == "Razorpay Test Mode"
 
+
+def test_dashboard_trend_endpoint_contract(tmp_path: Path) -> None:
+    client = _build_test_client(tmp_path)
+    response = client.get("/api/v1/dashboard/trend")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["success"] is True
+    assert isinstance(payload["data"], list)
+    assert len(payload["data"]) == 7
+    for point in payload["data"]:
+        assert "date" in point
+        assert "display_date" in point
+        assert "revenue_at_risk_minor" in point
+        assert "recovered_revenue_minor" in point
+        assert "attempts_count" in point
+
+
+def test_dashboard_events_endpoint_contract(tmp_path: Path) -> None:
+    client = _build_test_client(tmp_path)
+    response = client.get("/api/v1/dashboard/events?limit=5")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["success"] is True
+    assert isinstance(payload["data"], list)
+
+
