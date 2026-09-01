@@ -20,6 +20,11 @@ EVENT_TO_PAYMENT_STATUS = {
     "payment.authorized": "PENDING",
     "payment.failed": "FAILED",
     "payment.captured": "CAPTURED",
+    "payment_link.created": "CREATED",
+    "payment_link.paid": "CAPTURED",
+    "payment_link.expired": "FAILED",
+    "payment_link.cancelled": "FAILED",
+    "order.paid": "CAPTURED",
 }
 
 
@@ -45,6 +50,28 @@ def _extract_payment_entity(payload: dict[str, Any]) -> dict[str, Any] | None:
     payment = payload.get("payload", {}).get("payment", {}).get("entity")
     if isinstance(payment, dict):
         return payment
+    plink = payload.get("payload", {}).get("payment_link", {}).get("entity")
+    if isinstance(plink, dict):
+        return {
+            "id": plink.get("id"),
+            "order_id": plink.get("order_id"),
+            "amount": plink.get("amount"),
+            "currency": plink.get("currency", "INR"),
+            "method": "payment_link",
+            "captured": plink.get("status") in {"paid", "PAID"},
+            "error_reason": None,
+        }
+    order = payload.get("payload", {}).get("order", {}).get("entity")
+    if isinstance(order, dict):
+        return {
+            "id": order.get("id"),
+            "order_id": order.get("id"),
+            "amount": order.get("amount"),
+            "currency": order.get("currency", "INR"),
+            "method": "order",
+            "captured": order.get("status") in {"paid", "PAID"},
+            "error_reason": None,
+        }
     return None
 
 

@@ -8,7 +8,9 @@ HOST="${HOST:-127.0.0.1}"
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$ROOT_DIR"
 
-if [[ -x "$ROOT_DIR/.venv/bin/python" ]]; then
+if [[ -x "/Users/sj/miniforge3/envs/razor-env/bin/python" ]]; then
+  PYTHON_BIN="/Users/sj/miniforge3/envs/razor-env/bin/python"
+elif [[ -x "$ROOT_DIR/.venv/bin/python" ]]; then
   PYTHON_BIN="$ROOT_DIR/.venv/bin/python"
 elif command -v python3 >/dev/null 2>&1; then
   PYTHON_BIN="python3"

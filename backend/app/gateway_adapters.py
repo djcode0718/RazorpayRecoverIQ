@@ -173,7 +173,10 @@ class RazorpayPaymentAdapter(PaymentAdapter):
             "reference_id": reference_id,
             "description": f"RecoverIQ recovery opportunity {request.opportunity_id}",
             "notify": {"sms": False, "email": False},
-            "notes": {"recoveriq_opportunity_id": str(request.opportunity_id)},
+            "notes": {
+                "recoveriq_opportunity_id": str(request.opportunity_id),
+                "recoveriq_attempt_number": str(request.attempt_number),
+            },
         }
         if request.customer_reference:
             payload["notes"]["recoveriq_customer_ref"] = request.customer_reference

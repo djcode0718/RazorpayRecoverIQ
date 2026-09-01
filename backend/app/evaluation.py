@@ -448,6 +448,27 @@ def get_recoveriq_policy_path_summary(
     )
 
 
+def run_recoveriq_evaluation(
+    db: Session,
+    *,
+    dataset_version: str,
+    split: str = "TEST",
+    evaluation_run_id: str | None = None,
+) -> EvaluationRunSummary:
+    run_id = evaluation_run_id or str(uuid.uuid4())
+    cases = list(
+        db.execute(
+            select(EvaluationCase).where(EvaluationCase.dataset_version == dataset_version).where(EvaluationCase.split == split)
+        ).scalars().all()
+    )
+    return _summary_from_predictions(
+        run_id=run_id,
+        cases=cases,
+        predictor=_recoveriq_policy_prediction,
+        intervention_cost_minor_for_action=lambda action: 450 if action != "NO_ACTION" else 0,
+    )
+
+
 def get_strategy_attribution_comparison(
     db: Session,
     *,

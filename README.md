@@ -1,279 +1,218 @@
-# RecoverIQ - Razorpay Buildathon Demo (Track 03)
+# RazorpayRecoverIQ
 
-RecoverIQ is an AI-assisted, policy-bounded revenue recovery system for failed payments.
+> **AI-Assisted, Policy-Bounded Revenue Recovery Command Center for Failed Payments**  
+> *Razorpay Buildathon — Track 03: Autonomous Revenue Recovery & Payment Resilience*
 
-Core product narrative:
+---
 
-`FAILED PAYMENT -> AI UNDERSTANDING -> POLICY DECISION -> BOUNDED RECOVERY -> VERIFIED MONEY RECOVERED`
+## 🎯 Executive Product Narrative
 
-## What This Project Delivers
+When payments fail due to issuer downtime, network timeouts, 3DS authentication drops, or insufficient funds, merchants lose critical revenue. Traditional retry systems either blindly retry (incurring gateway penalty fees and annoying customers) or abandon the recovery completely.
 
-- FastAPI backend with SQLite persistence and auditable workflow events.
-- React + TypeScript Command Center UI driven entirely by backend APIs.
-- Deterministic simulation flow and explicit `razorpay_test` mode visibility.
-- AI diagnosis with strict schema validation and safe fallback behavior.
-- Deterministic policy gates that can block AI recommendations.
-- Guardrailed recovery execution with verified outcome accounting.
-- Persisted evaluation center (baseline vs RecoverIQ) with financial/operational metrics.
-- Failure demos for security and resilience evidence.
+**RazorpayRecoverIQ** bridges this gap with an autonomous, policy-bounded recovery pipeline:
 
-## High-Level Architecture
-
-- `backend/app/main.py`: app bootstrapping, exception handlers, request tracing.
-- `backend/app/api/routes.py`: all product APIs used by frontend and demo workflow.
-- `backend/app/webhooks.py`: webhook verification, idempotency, processing.
-- `backend/app/recovery_intelligence.py`: opportunity-level AI/rule decision creation.
-- `backend/app/policy_engine.py`: deterministic pass/fail checks and reason codes.
-- `backend/app/recovery_executor.py`: bounded execution and payment link actions.
-- `backend/app/outcome_verifier.py`: verification and recovered revenue accounting.
-- `backend/app/evaluation.py`: synthetic held-out datasets, baseline + RecoverIQ metrics.
-- `frontend/src/App.tsx`: Command Center, Opportunity Detail, Evaluation Center, Failure Demos, Readiness.
-
-## Product Workflow
-
-1. Failed payment signal enters via webhook (`payment.failed`) or simulation seed.
-2. Opportunity is created and quantified (`revenue_at_risk`, `expected_recovery`, `expected_net`).
-3. AI diagnosis generates evidence and recommendation.
-4. Policy checks independently gate execution:
-   - confidence check
-   - amount check
-   - expected recovery check
-   - retry limit check
-   - duplicate check
-   - Test Mode check
-5. If allowed, recovery action executes through adapter path.
-6. Outcome is verified (`VERIFIED_SUCCESS` / safe failure states).
-7. Metrics and audit events update command center + detail timeline.
-
-## Command Center Coverage
-
-Primary dashboard metrics:
-- Revenue At Risk
-- Recoverable Revenue
-- Recovery Attempts
-- Gross Recovered
-- Net Recovered
-- Recovery Rate
-- Active Opportunities
-
-Operational policy outcomes:
-- ALLOWED
-- BLOCKED
-- ESCALATED
-
-Mode visibility:
-- `SIMULATION MODE`
-- `RAZORPAY TEST MODE`
-
-## Opportunity Screens
-
-Opportunity list columns (API-backed):
-- Opportunity
-- Customer
-- Amount
-- Failure
-- Probability
-- Expected Recovery
-- Policy
-- Action
-- Status
-
-Opportunity detail (judge-primary screen):
-- Payment
-- Customer history
-- Failure
-- AI diagnosis
-- Evidence
-- Confidence
-- Economic calculation
-- Policy checks (PASS/FAIL)
-- Recovery action
-- Razorpay Payment Link
-- Payment status
-- Verified outcome
-- Audit trail
-- Recovery state progression (Opportunity -> Recommended -> Approved -> Payment Link Created -> Pending -> Successful -> Verified -> Recovered)
-
-## Evaluation Center
-
-Uses persisted evaluation runs and deterministic synthetic datasets.
-
-Shows:
-- Baseline vs RecoverIQ
-- Precision, Recall, F1, False Positive Rate
-- False-positive cost (count, exposure, intervention cost)
-- Revenue recovered (gross/net)
-- Operational counters (allowed/blocked/escalated/failed)
-
-## Failure Demos
-
-Built-in scenarios:
-- invalid webhook signature
-- invalid evaluation request
-- missing opportunity
-- AI invalid output
-- AI unavailable
-- policy blocked
-- recovery failure
-- duplicate webhook
-
-Each scenario returns a deterministic safe envelope with `expected_behavior` and `actual_behavior`.
-
-## API Surface (Primary)
-
-Health and readiness:
-- `GET /health`
-- `GET /ready`
-
-Dashboard and opportunities:
-- `GET /api/v1/dashboard/summary`
-- `GET /api/v1/opportunities`
-- `GET /api/v1/opportunities/{opportunity_id}`
-- `GET /api/v1/opportunities/{opportunity_id}/explanation`
-- `POST /api/v1/opportunities/{opportunity_id}/evaluate`
-- `POST /api/v1/opportunities/{opportunity_id}/execute`
-- `GET /api/v1/opportunities/{opportunity_id}/audit`
-
-Evaluation:
-- `POST /api/v1/evaluation/run`
-- `GET /api/v1/evaluation/history`
-- `GET /api/v1/evaluation/{run_id}`
-- `GET /api/v1/evaluation/{run_id}/comparison`
-- `GET /api/v1/evaluation/{run_id}/drilldown`
-
-Demo and readiness:
-- `POST /api/v1/demo/reset-core-recovery`
-- `POST /api/v1/demo/seed-core-recovery`
-- `POST /api/v1/readiness/phase13/execute`
-
-Integrations and webhooks:
-- `GET /api/v1/integrations/razorpay/status`
-- `POST /api/v1/webhooks/razorpay`
-
-Safety demos:
-- `GET /api/v1/failure-demos`
-- `POST /api/v1/failure-demos/trigger`
-
-## Configuration
-
-Start from `.env.example`.
-
-Core settings:
-- `APP_NAME`
-- `APP_ENV`
-- `APP_MODE`
-- `RECOVERIQ_DB_URL`
-- `API_PREFIX`
-
-Razorpay settings:
-- `RAZORPAY_KEY_ID`
-- `RAZORPAY_KEY_SECRET`
-- `RAZORPAY_WEBHOOK_SECRET`
-- `PAYMENT_ADAPTER_MODE=simulation|razorpay_test`
-
-AI settings:
-- `AI_PROVIDER=mock|local|ollama`
-- `OLLAMA_MODEL`
-
-Logging settings:
-- `LOG_LEVEL`
-- `LOG_SQL_QUERIES=true|false`
-
-Notes:
-- Use `razorpay_test` only for buildathon demo connectivity checks.
-- Live mode is intentionally not supported for this demo workflow.
-
-## Quick Start
-
-### One-command startup
-
-Windows (PowerShell):
-
-```powershell
-Set-Location C:\SourceCode\RazorpayRecoverIQ
-.\start.ps1
+```mermaid
+graph LR
+    A[Failed Payment] --> B[AI Diagnosis & Classification]
+    B --> C[7/7 Deterministic Policy Gates]
+    C --> D[Human / Automated Recovery Action]
+    D --> E[Razorpay Payment Link / Retargeting]
+    E --> F[Verified Outcome Accounting]
 ```
 
-Linux/macOS:
+$$\textbf{Failed Payment} \longrightarrow \textbf{AI Understanding} \longrightarrow \textbf{Policy Decision} \longrightarrow \textbf{Bounded Action} \longrightarrow \textbf{Verified Recovered Revenue}$$
 
+---
+
+## 🚀 Key Product Capabilities & Architecture
+
+RecoverIQ is built around five core operational surfaces:
+
+### 1. Executive Command Center (Tab 1)
+- **6-KPI Standardized Scorecard**: Revenue at Risk, Recoverable Pipeline, Total Attempts, Gross Recovered, Net Recovered, and Recovery Yield Rate.
+- **3-Card Executive Decision Insights**: Immediate High-Yield Actions, Blocked False-Positive Leakage, and Gateway Health Failover alerts.
+- **Recovery Economics & Trend Chart**: Visual breakdown of recoverable yield vs. avoided retry fees over time.
+- **End-to-End Conversion Funnel**: Ingestion $\to$ Diagnosis $\to$ Policy Clearance $\to$ Execution $\to$ Verification.
+- **AI Recovery Copilot & Priority Queue**: Real-time diagnostic guidance and high-value recovery opportunities.
+
+### 2. Opportunities Console & Slide-Over Drawer (Tab 2)
+- **Advanced Filtering Suite**: Debounced customer/ID search, multi-select filters for Status, Recovery Action, Confidence, and Amount.
+- **Rich Opportunity Table**: Dual-layer confidence meters, customer hierarchy, AI failure archetypes, and sorting/pagination.
+- **Fixed Slide-Over Drawer (`OpportunityDrawer`)**:
+  - Right-side slide-over panel with backdrop blur, keyboard `Escape` closing, and focus management.
+  - Complete financial hierarchy: Failed Amount, Expected Recovery, and Strategy.
+  - AI diagnostic reasoning with key decision factors and recovery probabilities.
+  - **6-Stage Vertical Workflow Stepper**: `Opportunity Created` $\to$ `AI Recommended` $\to$ `Policy Approved` $\to$ `Payment Link Dispatched` $\to$ `Customer Action` $\to$ `Verified Recovered`.
+  - Sticky footer CTA with live execution progress and verified outcome confirmation modal.
+
+### 3. Model Benchmark & Comparative Evaluation (Tab 3)
+- **Dual-Audience Validation Hero**: F1 Quality score ring, statistical superiority badge, and gross revenue lift narrative.
+- **6-Card Executive Scorecard**: Precision ($TP/(TP+FP)$), Recall ($TP/(TP+FN)$), F1 Score, Classification Accuracy, Passed Test Cases, and Classification Errors.
+- **A/B Benchmark Comparison Matrix**: RecoverIQ AI Policy vs. Naive Baseline across precision, yield, gross revenue, and avoided fees.
+- **Authentic 2x2 Diagnostic Confusion Matrix**: Actual ground truth vs. Predicted classifications with case percentages and fee economics.
+- **Sample Test Cases Drill-Down**: Inspectable holdout test cases table with filter tabs (*All*, *Classification Errors*, *Passed*).
+
+### 4. Platform Reliability & Cryptographic Security (Tab 4)
+- **Platform Trust Summary**: 4 state-driven cards for Reliability (Fail-Safe), Security (HMAC-SHA256), Data Integrity (Idempotency Ledger), and Auditability (7/7 Policy Gates).
+- **Operational Infrastructure Health**: 4 subsystem health cards (Razorpay Test Gateway, HMAC Webhook Gateway, AI ML Engine, Policy Safety Engine).
+- **2-Column Interactive Resilience Console**: Live probe execution suite for signature tampering, duplicate webhooks, AI timeouts, and API disruptions with live transition telemetry.
+- **7-Control Security Matrix**: Enforced authentication, authorization, HMAC integrity, deduplication, audit logging, and data validation.
+- **Progressive Disclosure**: Collapsible local ngrok tunneling guide and live cryptographic audit trail.
+
+### 5. Production Readiness & Release Assessment (Tab 5)
+- **Credible Release Gate Hero**: Communicates honest compliance ($10/10$ mandatory gates passed) and clear release recommendation (`READY FOR CONTROLLED PILOT`).
+- **6-Dimension Category Scorecards**: Functionality, Reliability & Failover, Security, Observability & Audit, Data Integrity, and Recovery Safety.
+- **Release Blockers & Deficiencies Alerting**: Surfaces any required actions before general production sign-off.
+- **Progressive Telemetry Disclosure**: Collapsible JSON evidence for every verified production gate.
+
+---
+
+## 🏗️ System Architecture & Codebase Map
+
+```
+RazorpayRecoverIQ/
+├── backend/
+│   ├── app/
+│   │   ├── main.py                    # FastAPI application, middleware, lifecycle
+│   │   ├── api/routes.py              # REST API endpoints (Command Center, Opportunities, Evaluation, Readiness)
+│   │   ├── webhooks.py                # HMAC-SHA256 signature verification & deduplication
+│   │   ├── recovery_intelligence.py   # AI diagnosis & local heuristic fallback engine
+│   │   ├── policy_engine.py           # 7/7 deterministic safety guardrails
+│   │   ├── recovery_executor.py       # Payment link creation & recovery adapter dispatch
+│   │   ├── outcome_verifier.py        # Verified outcome accounting & state transitions
+│   │   ├── evaluation.py              # Synthetic holdout benchmarking & confusion matrix math
+│   │   ├── demo_seed.py               # Deterministic demo scenarios & test cases
+│   │   ├── db.py                      # Database models, schemas, and event store
+│   │   └── gateway_adapters.py        # Razorpay Test & Simulation adapters
+│   ├── tests/                         # Comprehensive pytest suite
+│   └── requirements.txt               # Backend Python dependencies
+├── frontend/
+│   ├── src/
+│   │   ├── App.tsx                    # Main application orchestrator & tab routing
+│   │   ├── app.css                    # Production Global Design System & responsive styles
+│   │   ├── types/index.ts             # Strict TypeScript data contracts
+│   │   ├── services/api.ts            # Typed Axios API client
+│   │   ├── utils/formatters.ts        # Currency (INR), percentage, and timestamp formatters
+│   │   └── components/
+│   │       ├── commandCenter/         # Tab 1: KPIs, charts, funnel, copilot, queue
+│   │       ├── opportunities/         # Tab 2: Table, filters, Slide-over Drawer
+│   │       ├── evaluation/            # Tab 3: Hero, 6-scorecard, benchmark, 2x2 matrix
+│   │       ├── reliability/           # Tab 4: Trust summary, health, resilience console, controls
+│   │       ├── readiness/             # Tab 5: Release hero, 6-scorecard, gate checklist
+│   │       ├── layout/                # Header, navigation bar, demo action controls
+│   │       └── common/                # Badges, modals, skeletons, error banners
+│   ├── package.json                   # Frontend dependencies
+│   └── vite.config.ts                 # Vite bundler configuration
+├── start.sh                           # One-command macOS/Linux startup script
+├── start.ps1                          # One-command Windows PowerShell startup script
+└── README.md                          # Project documentation
+```
+
+---
+
+## ⚡ Quick Start & Running Locally
+
+### Prerequisites
+- **Python 3.10+**
+- **Node.js 18+** and **npm**
+
+### One-Command Startup
+
+#### Linux / macOS:
 ```bash
-cd /path/to/RazorpayRecoverIQ
 chmod +x ./start.sh
 ./start.sh
 ```
 
-Default URLs:
-- Backend: `http://127.0.0.1:8000`
-- Frontend: `http://127.0.0.1:5173`
-
-### Manual backend start (Windows)
-
+#### Windows (PowerShell):
 ```powershell
-Set-Location C:\SourceCode\RazorpayRecoverIQ
-.\.venv\Scripts\python.exe -m pip install -r backend\requirements.txt
-$env:PYTHONPATH = "C:\SourceCode\RazorpayRecoverIQ\backend"
-.\.venv\Scripts\python.exe -m uvicorn app.main:app --app-dir backend --host 127.0.0.1 --port 8000
-```
-
-### Manual frontend start (Windows)
-
-```powershell
-Set-Location C:\SourceCode\RazorpayRecoverIQ\frontend
-npm install
-npm run dev
-```
-
-## Demo Operations
-
-For a clean evidence run with concise logs:
-
-```powershell
-Set-Location C:\SourceCode\RazorpayRecoverIQ
-$env:LOG_SQL_QUERIES = "false"
 .\start.ps1
 ```
 
-From UI:
-1. `Reset Demo`
-2. `Seed Demo`
-3. Inspect command center + opportunity detail
-4. Run evaluation
-5. Trigger failure demos
+Default Local URLs:
+- **Frontend Command Center**: [http://127.0.0.1:5173](http://127.0.0.1:5173)
+- **Backend API & Swagger Docs**: [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)
+- **Backend Health Endpoint**: [http://127.0.0.1:8000/api/v1/health](http://127.0.0.1:8000/api/v1/health)
 
+---
 
-## Security Posture
+## 🛠️ Configuration & Environment Variables
 
-- Webhook signature validation is enforced.
-- Duplicate webhook deliveries are idempotent.
-- AI recommendations cannot bypass policy.
-- Recovery executor is bounded by allowlist + policy result.
-- Safe error envelopes avoid leaking sensitive internals.
-- Redaction utilities protect sensitive fields in logs/metadata paths.
-- Demo and integration checks expose `test_mode` and `live_mode_detected` status.
+Copy `.env.example` to `.env`:
 
-## Testing
+```env
+APP_NAME=RazorpayRecoverIQ
+APP_ENV=development
+APP_MODE=simulation
+RECOVERIQ_DB_URL=sqlite:///./recoveriq.db
+API_PREFIX=/api/v1
 
-Full backend test suite:
+# Razorpay Sandbox Credentials (for live testing)
+RAZORPAY_KEY_ID=rzp_test_your_key_id
+RAZORPAY_KEY_SECRET=your_key_secret
+RAZORPAY_WEBHOOK_SECRET=your_webhook_secret
+PAYMENT_ADAPTER_MODE=razorpay_test
 
-```powershell
-Set-Location C:\SourceCode\RazorpayRecoverIQ
-$env:PYTHONPATH = "C:\SourceCode\RazorpayRecoverIQ\backend"
-.\.venv\Scripts\python.exe -m pytest backend\tests -q
+# AI Provider Settings
+AI_PROVIDER=mock
+OLLAMA_MODEL=llama3
+
+# Logging
+LOG_LEVEL=INFO
+LOG_SQL_QUERIES=false
 ```
 
-Focused high-signal bundle (recommended when optimizing for < 1 minute):
+---
 
-```powershell
-Set-Location C:\SourceCode\RazorpayRecoverIQ
-$env:PYTHONPATH = "C:\SourceCode\RazorpayRecoverIQ\backend"
-.\.venv\Scripts\python.exe -m pytest backend\tests\test_recovery_workflow_end_to_end.py backend\tests\test_webhook_ingestion_idempotency.py backend\tests\test_opportunity_api_contracts.py backend\tests\test_evaluation_center_api_contracts.py backend\tests\test_security_error_envelope_and_redaction.py backend\tests\test_readiness_workflow_api.py backend\tests\test_razorpay_integration_status_api.py -q
+## 🌐 Live Webhook Tunneling (Razorpay Sandbox Setup)
+
+To ingest live payment failure callbacks from the Razorpay Sandbox Dashboard:
+
+1. **Launch a public tunnel**:
+   ```bash
+   ngrok http 8000
+   ```
+2. **Register Webhook in Razorpay Dashboard**:
+   - URL: `https://<your-tunnel-id>.ngrok-free.app/api/v1/webhooks/razorpay`
+   - Active Events: `payment.failed`, `payment.captured`, `payment_link.paid`
+   - Secret: Matches `RAZORPAY_WEBHOOK_SECRET` in `.env`.
+3. **Verify**: Trigger a test card decline on Razorpay Checkout. RecoverIQ will authenticate the HMAC-SHA256 signature, deduplicate the event, create an opportunity, and display it in the Command Center.
+
+---
+
+## 🧪 Testing & Verification Suite
+
+### Frontend Build & Type Check:
+```bash
+cd frontend
+npm run build
+```
+*(Ensures zero TypeScript errors and generates an optimized production bundle).*
+
+### Backend Pytest Suite:
+```bash
+python -m pytest backend/tests -v
 ```
 
-## Troubleshooting
+---
 
-- If opportunities are empty, run `Seed Demo` and refresh.
-- If webhook tests fail, verify `RAZORPAY_WEBHOOK_SECRET` is set.
-- If AI provider errors appear, switch to `AI_PROVIDER=mock` for deterministic behavior.
-- If mode badge is unexpected, verify `PAYMENT_ADAPTER_MODE` and restart backend.
-- If logs are noisy during acceptance evidence capture, set `LOG_SQL_QUERIES=false` before start.
+## 🔒 Security & Deterministic Reliability Guarantees
 
+1. **Cryptographic Webhook Verification**: Raw payload byte stream computed with HMAC-SHA256 against `X-Razorpay-Signature`. Any tampered payload is rejected with `HTTP 401 Unauthorized`.
+2. **Zero-State Idempotency Ledger**: Webhook event IDs are hashed and checked against the database ledger to ensure zero duplicate recovery charges.
+3. **7/7 Deterministic Safety Guardrails**: Hard policy limits gate every action:
+   - Minimum AI confidence threshold ($\ge 0.65$)
+   - Maximum recovery attempt limits ($\le 3$)
+   - Maximum transaction amount limits
+   - Expected net positive yield verification
+   - Merchant whitelist authorization
+   - Duplicate active link prevention
+   - Sandbox / Production mode safety gates
+4. **Autonomous AI Fallback**: If external LLMs encounter network timeouts or schema errors, a local deterministic heuristic engine seamlessly assumes diagnosis without dropping recovery flows.
+
+---
+
+## 👥 Contributors & Buildathon Track
+- **Project**: RazorpayRecoverIQ
+- **Track**: Track 03 — Autonomous Revenue Recovery & Payment Resilience
+- **Built for**: Razorpay Buildathon

@@ -3,7 +3,7 @@ from datetime import UTC, datetime
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from .models import Payment, RecoveryAttempt, RecoveryOutcome, RevenueOpportunity
+from .models import Payment, RecoveryAttempt, RecoveryOutcome, RecoveryPaymentLink, RevenueOpportunity
 from .state_machine import can_transition_recovery
 
 
@@ -102,4 +102,88 @@ def verify_outcomes_for_payment(db: Session, *, payment_id: int) -> list[Recover
             updated = verify_recovery_attempt_outcome(db, attempt_id=attempt.id)
             if updated is not None:
                 verified_attempts.append(updated)
+    return verified_attempts
+
+
+def verify_outcomes_for_payment_link(
+    db: Session,
+    *,
+    payment_link_id: str | None = None,
+    reference_id: str | None = None,
+    opportunity_id: int | None = None,
+    is_success: bool = True,
+    amount_minor: int | None = None,
+    payment_id: int | None = None,
+) -> list[RecoveryAttempt]:
+    query = select(RecoveryPaymentLink)
+    if payment_link_id:
+        query = query.where(RecoveryPaymentLink.payment_link_id == payment_link_id)
+    elif reference_id:
+        query = query.where(
+            (RecoveryPaymentLink.payment_link_reference_id == reference_id)
+            | (RecoveryPaymentLink.payment_link_reference_id.startswith(reference_id))
+        )
+    elif opportunity_id:
+        query = query.where(RecoveryPaymentLink.opportunity_id == opportunity_id)
+    else:
+        return []
+
+    links = db.execute(query).scalars().all()
+    verified_attempts: list[RecoveryAttempt] = []
+    for link in links:
+        link.status = "PAID" if is_success else "FAILED"
+        if link.recovery_attempt_id:
+            attempt = db.execute(
+                select(RecoveryAttempt).where(RecoveryAttempt.id == link.recovery_attempt_id)
+            ).scalar_one_or_none()
+            if attempt:
+                if is_success:
+                    attempt.verified_outcome = "VERIFIED_SUCCESS"
+                    attempt.status = "VERIFIED"
+                    attempt.recovered_amount_minor = amount_minor or attempt.amount_minor
+                    attempt.completed_at = _utc_now_naive()
+                    opportunity = db.execute(
+                        select(RevenueOpportunity).where(RevenueOpportunity.id == attempt.opportunity_id)
+                    ).scalar_one_or_none()
+                    if opportunity:
+                        if can_transition_recovery(opportunity.status, "PAYMENT_SUCCESSFUL"):
+                            opportunity.status = "PAYMENT_SUCCESSFUL"
+                        if can_transition_recovery(opportunity.status, "VERIFIED_RECOVERED"):
+                            opportunity.status = "VERIFIED_RECOVERED"
+                    db.add(
+                        RecoveryOutcome(
+                            attempt_id=attempt.id,
+                            opportunity_id=attempt.opportunity_id,
+                            payment_id=payment_id,
+                            status="VERIFIED_SUCCESS",
+                            recovered_amount_minor=attempt.recovered_amount_minor,
+                            verification_notes="payment_link_paid",
+                        )
+                    )
+                else:
+                    attempt.verified_outcome = "VERIFIED_FAILURE"
+                    attempt.status = "VERIFIED"
+                    attempt.recovered_amount_minor = 0
+                    attempt.completed_at = _utc_now_naive()
+                    opportunity = db.execute(
+                        select(RevenueOpportunity).where(RevenueOpportunity.id == attempt.opportunity_id)
+                    ).scalar_one_or_none()
+                    if opportunity:
+                        if can_transition_recovery(opportunity.status, "PAYMENT_FAILED"):
+                            opportunity.status = "PAYMENT_FAILED"
+                        if can_transition_recovery(opportunity.status, "RECOVERY_FAILED"):
+                            opportunity.status = "RECOVERY_FAILED"
+                    db.add(
+                        RecoveryOutcome(
+                            attempt_id=attempt.id,
+                            opportunity_id=attempt.opportunity_id,
+                            payment_id=payment_id,
+                            status="VERIFIED_FAILURE",
+                            recovered_amount_minor=0,
+                            verification_notes="payment_link_failed",
+                        )
+                    )
+                db.commit()
+                db.refresh(attempt)
+                verified_attempts.append(attempt)
     return verified_attempts

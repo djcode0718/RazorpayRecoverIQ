@@ -1,7 +1,9 @@
 import base64
 import json
 from datetime import datetime, timedelta, date
+from typing import Any
 
+import httpx
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
@@ -114,6 +116,7 @@ def _serialize_opportunity_list_item(
     decision: RecoveryDecision | None,
     policy_evaluation: PolicyEvaluation | None,
     latest_attempt: RecoveryAttempt | None,
+    customer: Customer | None = None,
 ) -> dict:
     risk_bucket = _derive_risk_bucket(
         recovery_probability=opportunity.recovery_probability,
@@ -150,6 +153,8 @@ def _serialize_opportunity_list_item(
             verification_status = "VERIFIED"
         elif latest_attempt.status in {"PENDING_VERIFICATION", "VERIFICATION_PENDING"}:
             verification_status = "PENDING"
+        elif latest_attempt.status == "VERIFICATION_BLOCKED" or latest_attempt.verified_outcome == "UNVERIFIED":
+            verification_status = "VERIFICATION_FAILED"
         else:
             verification_status = "UNVERIFIED"
 
@@ -159,15 +164,30 @@ def _serialize_opportunity_list_item(
         if latest_attempt.verified_outcome == "VERIFIED_SUCCESS":
             outcome = "RECOVERED"
         elif latest_attempt.verified_outcome == "VERIFIED_FAILURE":
-            outcome = "FAILED"
+            outcome = "NOT_RECOVERED"
+        elif latest_attempt.verified_outcome == "UNVERIFIED" or latest_attempt.status == "VERIFICATION_BLOCKED":
+            outcome = "VERIFICATION_FAILED"
         elif latest_attempt.status == "FAILED":
             outcome = "FAILED"
-    elif policy_evaluation is not None and policy_evaluation.result in {"BLOCK", "ESCALATE"}:
-        outcome = "FAILED"
+        elif latest_attempt.status in {"REQUESTED", "EXECUTED", "PENDING", "PENDING_VERIFICATION", "VERIFICATION_PENDING"}:
+            outcome = "PENDING"
+    elif policy_evaluation is not None:
+        if policy_evaluation.result == "BLOCK":
+            outcome = "BLOCKED"
+        elif policy_evaluation.result == "ESCALATE":
+            outcome = "ESCALATED"
+        elif policy_evaluation.result == "ALLOW":
+            outcome = "PENDING"
+
+    customer_ref = (
+        customer.name
+        if customer and customer.name
+        else (f"CUST-{opportunity.customer_id}" if opportunity.customer_id is not None else f"CUST-SYNTH-{opportunity.id:04d}")
+    )
 
     return {
         "id": opportunity.id,
-        "customer_reference": f"CUST-{opportunity.customer_id}" if opportunity.customer_id is not None else "UNKNOWN",
+        "customer_reference": customer_ref,
         "status": opportunity.status,
         "lifecycle_status": lifecycle_status,
         "failure_category": opportunity.failure_category,
@@ -359,7 +379,7 @@ def _derive_semantic_states(
 
     return {
         "original_payment": original_payment_state,
-        "opportunity": "OPPORTUNITY_IDENTIFIED",
+        "opportunity": "RECOVERY_OPPORTUNITY_IDENTIFIED",
         "ai": "AI_ANALYZED" if decision is not None else None,
         "recommendation": "RECOVERY_RECOMMENDED" if decision is not None else None,
         "policy": policy_state,
@@ -387,13 +407,116 @@ def _latest_policy_for_decision(db: Session, decision_id: int) -> PolicyEvaluati
     ).scalars().first()
 
 
+def get_truthful_operating_status(db: Session, settings: Settings) -> dict[str, Any]:
+    # 1. DATA SOURCE
+    events = db.execute(select(WebhookEvent.account_id, WebhookEvent.razorpay_event_id).limit(100)).all()
+    if not events:
+        data_source = "SEEDED DEMO" if settings.app_mode.lower() == "simulation" else "LIVE INGESTION"
+    else:
+        has_live = any(
+            (row.account_id and row.account_id != "acc_demo_seed")
+            or not (row.razorpay_event_id and row.razorpay_event_id.startswith("evt_demo_"))
+            for row in events
+        )
+        data_source = "LIVE INGESTION" if has_live else "SEEDED DEMO"
+
+    # 2. PAYMENT ENVIRONMENT
+    adapter_mode = settings.payment_adapter_mode.strip().lower()
+    adapter_test_mode = adapter_mode in {"razorpay_test", "test_mode"}
+    live_mode_detected = settings.razorpay_live_mode_detected
+    credentials_configured = settings.razorpay_configured
+    credentials_test_mode = settings.razorpay_test_mode_keys and credentials_configured and not live_mode_detected
+
+    api_connectivity = False
+    api_connectivity_reason = None
+    if adapter_test_mode and credentials_test_mode:
+        payment_environment = "RAZORPAY TEST"
+        api_connectivity, api_connectivity_reason = check_razorpay_api_connectivity(settings)
+    elif live_mode_detected:
+        payment_environment = "SIMULATION"
+        api_connectivity_reason = "live_mode_not_allowed"
+    elif not adapter_test_mode:
+        payment_environment = "SIMULATION"
+        api_connectivity_reason = "adapter_mode_not_razorpay_test"
+    elif not credentials_configured:
+        payment_environment = "SIMULATION"
+        api_connectivity_reason = "credentials_not_configured"
+    else:
+        payment_environment = "SIMULATION"
+        api_connectivity_reason = "razorpay_test_mode_credentials_required"
+
+    # 3. AI PROVIDER
+    ai_provider_config = (settings.ai_provider or "").strip().lower()
+    if ai_provider_config == "mock":
+        ai_provider_status = "MOCK/FALLBACK"
+        ai_provider_note = "Deterministic mock provider active"
+    elif ai_provider_config in {"ollama", "local"}:
+        try:
+            resp = httpx.get("http://127.0.0.1:11434/api/tags", timeout=0.8)
+            if resp.status_code == 200:
+                ai_provider_status = "LOCAL"
+                ai_provider_note = f"Ollama local active ({settings.ollama_model})"
+            else:
+                ai_provider_status = "MOCK/FALLBACK"
+                ai_provider_note = "Ollama unresponsive, fallback enabled"
+        except Exception:
+            ai_provider_status = "MOCK/FALLBACK"
+            ai_provider_note = "Ollama unreachable, fallback enabled"
+    elif ai_provider_config in {"openai", "gemini", "anthropic", "external"}:
+        ai_provider_status = "EXTERNAL"
+        ai_provider_note = f"External AI provider ({ai_provider_config})"
+    else:
+        ai_provider_status = "UNAVAILABLE"
+        ai_provider_note = f"Unknown provider: {ai_provider_config}"
+
+    # 4. POLICY ENGINE
+    policy_engine_status = "ACTIVE"
+    policy_engine_note = "Safety policy rules & threshold evaluation active"
+
+    # 5. WEBHOOK
+    webhook_secret_present = bool((settings.razorpay_webhook_secret or "").strip())
+    last_event = db.execute(select(WebhookEvent).order_by(WebhookEvent.id.desc())).scalars().first()
+    verified_events_count = db.execute(
+        select(func.count(WebhookEvent.id)).where(WebhookEvent.signature_valid == True)
+    ).scalar_one()
+
+    if not webhook_secret_present:
+        webhook_status = "DEGRADED"
+        webhook_note = "Webhook secret not configured"
+    elif last_event is None:
+        webhook_status = "WAITING"
+        webhook_note = "Secret configured, waiting for events"
+    elif verified_events_count > 0:
+        webhook_status = "VERIFIED"
+        webhook_note = f"Last verified event: {last_event.event_type}"
+    else:
+        webhook_status = "CONFIGURED"
+        webhook_note = "Configured, awaiting verified events"
+
+    return {
+        "data_source": data_source,
+        "payment_environment": payment_environment,
+        "ai_provider": ai_provider_status,
+        "ai_provider_note": ai_provider_note,
+        "policy_engine": policy_engine_status,
+        "policy_engine_note": policy_engine_note,
+        "webhook": webhook_status,
+        "webhook_note": webhook_note,
+        "api_connectivity": api_connectivity,
+        "api_connectivity_reason": api_connectivity_reason,
+        "last_event": last_event.event_type if last_event else None,
+        "last_event_id": last_event.razorpay_event_id if last_event else None,
+        "last_event_status": last_event.processing_status if last_event else None,
+        "last_event_received_at": last_event.received_at.isoformat() if last_event and last_event.received_at else None,
+    }
+
+
 @router.get("/dashboard/summary")
 def dashboard_summary(db: Session = Depends(get_db), settings: Settings = Depends(get_settings)) -> dict:
+    operating_status = get_truthful_operating_status(db, settings)
     mode = (
         "razorpay_test"
-        if settings.payment_adapter_mode.lower() == "razorpay_test"
-        and settings.razorpay_test_mode_keys
-        and not settings.razorpay_live_mode_detected
+        if operating_status["payment_environment"] == "RAZORPAY TEST"
         else "simulation"
     )
     mode_label = "Razorpay Test Mode" if mode == "razorpay_test" else "Simulation Mode"
@@ -483,6 +606,7 @@ def dashboard_summary(db: Session = Depends(get_db), settings: Settings = Depend
     data = {
         "mode": mode,
         "mode_label": mode_label,
+        "operating_status": operating_status,
         "revenue_at_risk_minor": revenue_at_risk_minor,
         "recoverable_revenue_minor": recoverable_revenue_minor,
         "recovery_attempts": recovery_attempts,
@@ -679,11 +803,18 @@ def list_opportunities(
                     .order_by(RecoveryAttempt.attempt_number.desc(), RecoveryAttempt.id.desc())
                 ).scalars().first()
 
+                customer = (
+                    db.execute(select(Customer).where(Customer.id == opportunity.customer_id)).scalar_one_or_none()
+                    if opportunity.customer_id is not None
+                    else None
+                )
+
                 serialized = _serialize_opportunity_list_item(
                     opportunity,
                     decision=latest_decision,
                     policy_evaluation=policy_evaluation,
                     latest_attempt=latest_attempt,
+                    customer=customer,
                 )
 
                 if normalized_bucket and serialized["risk_bucket"] != normalized_bucket:
@@ -751,12 +882,19 @@ def list_opportunities(
             .order_by(RecoveryAttempt.attempt_number.desc(), RecoveryAttempt.id.desc())
         ).scalars().first()
 
+        customer = (
+            db.execute(select(Customer).where(Customer.id == opportunity.customer_id)).scalar_one_or_none()
+            if opportunity.customer_id is not None
+            else None
+        )
+
         enriched_items.append(
             _serialize_opportunity_list_item(
                 opportunity,
                 decision=latest_decision,
                 policy_evaluation=policy_evaluation,
                 latest_attempt=latest_attempt,
+                customer=customer,
             )
         )
 
@@ -1592,8 +1730,9 @@ def get_opportunity_audit(opportunity_id: int, db: Session = Depends(get_db)):
 
 
 @router.get("/health")
-def health() -> dict:
-    return {"success": True, "data": {"status": "ok"}}
+def health(db: Session = Depends(get_db), settings: Settings = Depends(get_settings)) -> dict:
+    operating_status = get_truthful_operating_status(db, settings)
+    return {"success": True, "data": {"status": "ok", "operating_status": operating_status}}
 
 
 @router.get("/failure-demos")
@@ -2005,28 +2144,13 @@ def ready(db: Session = Depends(get_db)) -> dict:
 
 @router.get("/integrations/razorpay/status")
 def razorpay_integration_status(db: Session = Depends(get_db), settings: Settings = Depends(get_settings)) -> dict:
-    mode = settings.payment_adapter_mode.strip().lower()
-    adapter_test_mode = mode in {"razorpay_test", "test_mode"}
+    operating_status = get_truthful_operating_status(db, settings)
+    test_mode = operating_status["payment_environment"] == "RAZORPAY TEST"
     live_mode_detected = settings.razorpay_live_mode_detected
     credentials_configured = settings.razorpay_configured
-    credentials_test_mode = settings.razorpay_test_mode_keys and credentials_configured and not live_mode_detected
-    test_mode = adapter_test_mode and credentials_test_mode
     webhook_configured = bool((settings.razorpay_webhook_secret or "").strip())
-
-    api_connectivity = False
-    api_connectivity_reason = None
-    if test_mode:
-        api_connectivity, api_connectivity_reason = check_razorpay_api_connectivity(settings)
-    elif live_mode_detected:
-        api_connectivity_reason = "live_mode_not_allowed"
-    elif not adapter_test_mode:
-        api_connectivity_reason = "adapter_mode_not_razorpay_test"
-    elif not credentials_configured:
-        api_connectivity_reason = "credentials_not_configured"
-    elif not settings.razorpay_test_mode_keys:
-        api_connectivity_reason = "razorpay_test_mode_credentials_required"
-    else:
-        api_connectivity_reason = "integration_not_configured"
+    api_connectivity = operating_status["api_connectivity"]
+    api_connectivity_reason = operating_status["api_connectivity_reason"]
 
     last_event = db.execute(select(WebhookEvent).order_by(WebhookEvent.id.desc())).scalars().first()
     links = db.execute(
@@ -2061,6 +2185,7 @@ def razorpay_integration_status(db: Session = Depends(get_db), settings: Setting
             "api_connectivity_reason": api_connectivity_reason,
             "webhook_configured": webhook_configured,
             "adapter_mode": settings.payment_adapter_mode,
+            "operating_status": operating_status,
             "last_event": last_event.event_type if last_event is not None else None,
             "last_event_id": last_event.razorpay_event_id if last_event is not None else None,
             "last_event_status": last_event.processing_status if last_event is not None else None,
