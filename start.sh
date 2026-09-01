@@ -9,12 +9,15 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$ROOT_DIR"
 
 # Use the currently available Python (including an activated Conda environment)
-if ! command -v python3 >/dev/null 2>&1; then
-  echo "python3 not found. Please activate your Python/Conda environment and retry." >&2
+# Find Python
+if command -v python3 >/dev/null 2>&1; then
+  PYTHON_BIN="$(command -v python3)"
+elif [[ -x "$ROOT_DIR/.venv/bin/python" ]]; then
+  PYTHON_BIN="$ROOT_DIR/.venv/bin/python"
+else
+  echo "Python not found. Activate your Conda environment or create .venv first." >&2
   exit 1
 fi
-
-PYTHON_BIN="python3"
 
 # Check npm
 if ! command -v npm >/dev/null 2>&1; then
