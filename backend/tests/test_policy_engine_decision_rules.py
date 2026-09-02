@@ -10,7 +10,7 @@ from app.policy_engine import evaluate_policy_for_decision
 
 
 def _build_session(tmp_path: Path) -> Session:
-    os.environ["RECOVERIQ_DB_URL"] = f"sqlite:///{tmp_path / 'phase6_policy.db'}"
+    os.environ["RECOVERIQ_DB_URL"] = f"sqlite:///{tmp_path / 'policy_test.db'}"
     get_settings.cache_clear()
     reset_db_runtime()
     init_db()
@@ -27,14 +27,16 @@ def _seed_opportunity_and_decision(
 ) -> tuple[int, int]:
     payment = Payment(
         razorpay_payment_id=f"pay_{amount_minor}_{confidence}",
-        razorpay_order_id="order_phase6",
+        razorpay_order_id="order_policy_test",
         customer_id=None,
         amount_minor=amount_minor,
         currency="INR",
         status="FAILED",
         method="card",
-        captured=False,
+        failure_code="BAD_REQUEST_ERROR",
         failure_reason="network",
+        failure_source="GATEWAY",
+        captured=False,
     )
     session.add(payment)
     session.commit()
@@ -45,10 +47,9 @@ def _seed_opportunity_and_decision(
         payment_id=payment.id,
         order_id=None,
         subscription_id=None,
-        source_event_id=None,
         amount_at_risk_minor=amount_minor,
         currency="INR",
-        failure_category="NETWORK",
+        failure_category="GATEWAY_ERROR",
         failure_reason="network",
         recovery_probability=70,
         recovery_score=70,
@@ -66,7 +67,7 @@ def _seed_opportunity_and_decision(
 
     decision = RecoveryDecision(
         opportunity_id=opportunity.id,
-        diagnosis="Deterministic phase 6 policy test diagnosis that satisfies minimum length.",
+        diagnosis="Deterministic policy test diagnosis that satisfies minimum length.",
         evidence={"signals": [{"signal": "failure_reason", "value": "network"}]},
         recovery_probability=70,
         confidence=confidence,
@@ -78,7 +79,7 @@ def _seed_opportunity_and_decision(
         provider="mock",
         model="mock-v1",
         model_version="mock-v1",
-        prompt_version="phase5-v1",
+        prompt_version="v1.0",
         schema_version="v1",
     )
     session.add(decision)

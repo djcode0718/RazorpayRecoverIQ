@@ -16,7 +16,7 @@ from .models import PolicyEvaluation, RecoveryAttempt, RecoveryDecision, Recover
 from .state_machine import RecoveryState, can_transition_recovery
 
 
-EXECUTOR_VERSION = "phase6-v1"
+EXECUTOR_VERSION = "v1.0"
 EXECUTABLE_ACTIONS = {"CREATE_PAYMENT_LINK"}
 TERMINAL_OPPORTUNITY_STATUSES = {"CLOSED", "RESOLVED"}
 _LEGACY_LINK_EQUIVALENT_ACTIONS = {

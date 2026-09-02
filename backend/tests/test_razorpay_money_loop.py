@@ -32,12 +32,12 @@ def _build_test_client(
     tmp_path: Path,
     *,
     adapter_mode: str = "simulation",
-    key_id: str = "rzp_test_phase2_key",
-    key_secret: str = "phase2_secret",
+    key_id: str = "rzp_test_money_loop_key",
+    key_secret: str = "money_loop_secret",
     ai_provider: str = "mock",
-    secret: str = "whsec_phase2_test_secret",
+    secret: str = "whsec_money_loop_test_secret",
 ) -> tuple[TestClient, str]:
-    db_file = tmp_path / f"phase2_test_{os.urandom(4).hex()}.db"
+    db_file = tmp_path / f"money_loop_test_{os.urandom(4).hex()}.db"
     os.environ["RECOVERIQ_DB_URL"] = f"sqlite:///{db_file}"
     os.environ["RAZORPAY_WEBHOOK_SECRET"] = secret
     os.environ["PAYMENT_ADAPTER_MODE"] = adapter_mode
@@ -54,7 +54,7 @@ def _build_test_client(
     return TestClient(app), secret
 
 
-def test_phase2_01_credentials_loading(tmp_path: Path) -> None:
+def test_money_loop_01_credentials_loading(tmp_path: Path) -> None:
     """1. Prove credentials load securely from settings without exposing secrets."""
     client, secret = _build_test_client(tmp_path, key_id="rzp_test_abc123", key_secret="secret_xyz789")
     settings = get_settings()
@@ -64,7 +64,7 @@ def test_phase2_01_credentials_loading(tmp_path: Path) -> None:
     assert settings.razorpay_live_mode_detected is False
 
 
-def test_phase2_02_razorpay_connectivity_check(tmp_path: Path, monkeypatch) -> None:
+def test_money_loop_02_razorpay_connectivity_check(tmp_path: Path, monkeypatch) -> None:
     """2. Prove Razorpay connectivity checks test credentials and live mode safety."""
     client, secret = _build_test_client(tmp_path, key_id="rzp_test_valid", key_secret="valid_sec")
     settings = get_settings()
@@ -81,7 +81,7 @@ def test_phase2_02_razorpay_connectivity_check(tmp_path: Path, monkeypatch) -> N
     assert reason is None
 
 
-def test_phase2_03_payment_link_creation_contract(tmp_path: Path, monkeypatch) -> None:
+def test_money_loop_03_payment_link_creation_contract(tmp_path: Path, monkeypatch) -> None:
     """3. Prove Razorpay Standard Payment Link creation uses official POST /v1/payment_links schema."""
     captured_calls = []
 
@@ -124,7 +124,7 @@ def test_phase2_03_payment_link_creation_contract(tmp_path: Path, monkeypatch) -
     assert call_payload["notes"]["recoveriq_opportunity_id"] == "10"
 
 
-def test_phase2_04_payment_link_persistence(tmp_path: Path) -> None:
+def test_money_loop_04_payment_link_persistence(tmp_path: Path) -> None:
     """4. Prove Payment Link ID, short URL, reference ID, and attempt IDs persist in DB."""
     client, secret = _build_test_client(tmp_path, adapter_mode="simulation")
 
@@ -164,7 +164,7 @@ def test_phase2_04_payment_link_persistence(tmp_path: Path) -> None:
         session.close()
 
 
-def test_phase2_05_success_path_payment_link_paid_to_recovered(tmp_path: Path) -> None:
+def test_money_loop_05_success_path_payment_link_paid_to_recovered(tmp_path: Path) -> None:
     """5. Prove success path: payment_link.paid -> VERIFIED_SUCCESS -> RECOVERED -> gross_recovered increases."""
     client, secret = _build_test_client(tmp_path, adapter_mode="simulation")
 
@@ -246,7 +246,7 @@ def test_phase2_05_success_path_payment_link_paid_to_recovered(tmp_path: Path) -
     assert detail["action_traceability"]["outcome"] == "RECOVERED"
 
 
-def test_phase2_06_failure_path_preserves_recovered_revenue(tmp_path: Path) -> None:
+def test_money_loop_06_failure_path_preserves_recovered_revenue(tmp_path: Path) -> None:
     """6. Prove failure path: failed payment on link -> VERIFIED_FAILURE -> NOT_RECOVERED -> gross_recovered untouched."""
     client, secret = _build_test_client(tmp_path, adapter_mode="simulation")
 
@@ -322,7 +322,7 @@ def test_phase2_06_failure_path_preserves_recovered_revenue(tmp_path: Path) -> N
     assert detail["action_traceability"]["outcome"] in {"NOT_RECOVERED", "FAILED"}
 
 
-def test_phase2_07_webhook_signature_verification(tmp_path: Path) -> None:
+def test_money_loop_07_webhook_signature_verification(tmp_path: Path) -> None:
     """7. Prove webhook signature verification rejects invalid or tampered signatures."""
     client, secret = _build_test_client(tmp_path, adapter_mode="simulation")
 
@@ -340,7 +340,7 @@ def test_phase2_07_webhook_signature_verification(tmp_path: Path) -> None:
     assert res_good.status_code == 200
 
 
-def test_phase2_08_duplicate_event_deduplication(tmp_path: Path) -> None:
+def test_money_loop_08_duplicate_event_deduplication(tmp_path: Path) -> None:
     """8. Prove duplicate webhook events are safely ignored via ledger idempotency."""
     client, secret = _build_test_client(tmp_path, adapter_mode="simulation")
 
@@ -377,7 +377,7 @@ def test_phase2_08_duplicate_event_deduplication(tmp_path: Path) -> None:
     assert r2.json()["data"]["duplicate"] is True
 
 
-def test_phase2_09_recovered_revenue_integrity(tmp_path: Path) -> None:
+def test_money_loop_09_recovered_revenue_integrity(tmp_path: Path) -> None:
     """9. Prove recovered revenue remains 0 while links are pending and increases only on verified payment."""
     client, secret = _build_test_client(tmp_path, adapter_mode="simulation")
 
@@ -411,7 +411,7 @@ def test_phase2_09_recovered_revenue_integrity(tmp_path: Path) -> None:
     assert s["recovery_rate"] == 0.0
 
 
-def test_phase2_10_complete_audit_trail(tmp_path: Path) -> None:
+def test_money_loop_10_complete_audit_trail(tmp_path: Path) -> None:
     """10. Prove complete end-to-end audit trail is recorded from detection to verification."""
     client, secret = _build_test_client(tmp_path, adapter_mode="simulation")
 

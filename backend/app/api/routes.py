@@ -295,7 +295,7 @@ def _policy_checks_from_evaluation(policy: PolicyEvaluation | None) -> dict:
         }
 
     checks = {
-        # Prompt 05 judge-facing naming.
+        # Standardized metric check naming.
         "confidence_check": policy.confidence_check,
         "amount_check": policy.max_amount_check,
         "expected_recovery_check": policy.economic_check,
@@ -1822,7 +1822,7 @@ def list_failure_demos() -> dict:
             "severity": "high",
             "expected_error_code": "AI_UNAVAILABLE",
             "description": "Demonstrates graceful handling when AI provider is unreachable.",
-            "trigger": "AI LLM API timeout or rate limit error during diagnosis phase.",
+            "trigger": "AI LLM API timeout or rate limit error during diagnosis stage.",
             "expected_behavior": "AI provider failure is intercepted; safe rule-based heuristic fallback activated.",
             "actual_behavior": "AI unavailability caught; system triggers default rule-based diagnosis and enforces policy checks.",
             "system_outcome": "System remained safe",
@@ -1859,7 +1859,7 @@ def list_failure_demos() -> dict:
             "severity": "high",
             "expected_error_code": "RECOVERY_EXECUTION_FAILED",
             "description": "Demonstrates safe handling when recovery execution fails.",
-            "trigger": "Payment link creation API returns error response during executor phase.",
+            "trigger": "Payment link creation API returns error response during execution stage.",
             "expected_behavior": "Execution failure caught; attempt status set to FAILED; recovered revenue remains unchanged.",
             "actual_behavior": "Gateway error caught; attempt recorded as FAILED with error code; no revenue counted.",
             "system_outcome": "System remained safe",
@@ -1959,7 +1959,7 @@ def trigger_failure_demo(request: FailureScenarioTriggerRequest):
             }
         },
         "ai_unavailable": {
-            "trigger": "AI LLM API timeout or rate limit error during diagnosis phase.",
+            "trigger": "AI LLM API timeout or rate limit error during diagnosis stage.",
             "expected_behavior": "AI provider failure is intercepted; safe rule-based heuristic fallback activated.",
             "actual_behavior": "AI unavailability caught; system triggers default rule-based diagnosis and enforces policy checks.",
             "system_outcome": "System remained safe",
@@ -1986,7 +1986,7 @@ def trigger_failure_demo(request: FailureScenarioTriggerRequest):
             }
         },
         "recovery_failure": {
-            "trigger": "Payment link creation API returns error response during executor phase.",
+            "trigger": "Payment link creation API returns error response during execution stage.",
             "expected_behavior": "Execution failure caught; attempt status set to FAILED; recovered revenue remains unchanged.",
             "actual_behavior": "Gateway error caught; attempt recorded as FAILED with error code; no revenue counted.",
             "system_outcome": "System remained safe",

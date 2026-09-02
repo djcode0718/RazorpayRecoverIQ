@@ -95,7 +95,7 @@ def _seed_attempt_for_verifier(session: Session, *, payment_status: str) -> int:
         provider="mock",
         model="mock-v1",
         model_version="mock-v1",
-        prompt_version="phase5-v1",
+        prompt_version="v1.0",
         schema_version="v1",
     )
     session.add(decision)
@@ -114,7 +114,7 @@ def _seed_attempt_for_verifier(session: Session, *, payment_status: str) -> int:
         economic_check=True,
         duplicate_check=True,
         environment_check=True,
-        policy_version="phase6-v1",
+        policy_version="v1.0",
     )
     session.add(evaluation)
     session.commit()

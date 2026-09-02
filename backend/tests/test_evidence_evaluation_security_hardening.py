@@ -27,7 +27,7 @@ def _build_test_env(tmp_path: Path, *, secret: str = "whsec_phase4_secret", adap
     os.environ["RECOVERIQ_DB_URL"] = f"sqlite:///{db_file}"
     os.environ["RAZORPAY_WEBHOOK_SECRET"] = secret
     os.environ["PAYMENT_ADAPTER_MODE"] = adapter_mode
-    os.environ["RAZORPAY_KEY_ID"] = "rzp_test_phase4"
+    os.environ["RAZORPAY_KEY_ID"] = "rzp_test_evidence"
     os.environ["RAZORPAY_KEY_SECRET"] = "phase4_secret"
     os.environ["AI_PROVIDER"] = "mock"
     os.environ["APP_MODE"] = "simulation"
@@ -39,7 +39,7 @@ def _build_test_env(tmp_path: Path, *, secret: str = "whsec_phase4_secret", adap
 
 
 # 1. Held-Out Evaluation & Baseline Reproducibility
-def test_phase4_01_evaluation_held_out_dataset_and_baseline_determinism(tmp_path: Path) -> None:
+def test_evidence_01_evaluation_held_out_dataset_and_baseline_determinism(tmp_path: Path) -> None:
     """Validate held-out evaluation dataset, splits, confusion matrix, and reproducible baseline."""
     client, secret = _build_test_env(tmp_path)
     session = get_session_local()()
@@ -77,7 +77,7 @@ def test_phase4_01_evaluation_held_out_dataset_and_baseline_determinism(tmp_path
 
 
 # 2. Complete Batch Money Recovery & Economic Net Benefit
-def test_phase4_02_complete_batch_economic_benefit(tmp_path: Path) -> None:
+def test_evidence_02_complete_batch_economic_benefit(tmp_path: Path) -> None:
     """Calculate baseline recovered, RecoverIQ recovered, false-positive cost, intervention cost, and net benefit."""
     client, secret = _build_test_env(tmp_path)
     session = get_session_local()()
@@ -99,7 +99,7 @@ def test_phase4_02_complete_batch_economic_benefit(tmp_path: Path) -> None:
 
 
 # 3. AI Quality & Fail-Closed Behavior
-def test_phase4_03_ai_fail_closed_on_invalid_output(tmp_path: Path) -> None:
+def test_evidence_03_ai_fail_closed_on_invalid_output(tmp_path: Path) -> None:
     """Invalid or malformed AI output must fail closed, produce an audit event, and not execute payments."""
     client, secret = _build_test_env(tmp_path)
     session = get_session_local()()
@@ -147,7 +147,7 @@ def test_phase4_03_ai_fail_closed_on_invalid_output(tmp_path: Path) -> None:
 
 
 # 4. Deterministic Policy Gate Rules
-def test_phase4_04_policy_engine_enforces_all_guardrails(tmp_path: Path) -> None:
+def test_evidence_04_policy_engine_enforces_all_guardrails(tmp_path: Path) -> None:
     """Verify max amount limit, confidence threshold, retry limits, and duplicate protection."""
     client, secret = _build_test_env(tmp_path)
     session = get_session_local()()
@@ -216,7 +216,7 @@ def test_phase4_04_policy_engine_enforces_all_guardrails(tmp_path: Path) -> None
 
 
 # 5. Webhook HMAC-SHA256 Security & Idempotent Ledger Deduplication
-def test_phase4_05_webhook_security_and_replay_protection(tmp_path: Path) -> None:
+def test_evidence_05_webhook_security_and_replay_protection(tmp_path: Path) -> None:
     """Verify signature verification, raw body validation, duplicate event deduplication, and replay protection."""
     client, secret = _build_test_env(tmp_path)
 
@@ -258,7 +258,7 @@ def test_phase4_05_webhook_security_and_replay_protection(tmp_path: Path) -> Non
 
 
 # 6. Failure Safety Across All Edge Scenarios
-def test_phase4_06_failure_safety_fails_gracefully(tmp_path: Path) -> None:
+def test_evidence_06_failure_safety_fails_gracefully(tmp_path: Path) -> None:
     """Test corrupted payloads, missing opportunities, and invalid requests all fail safely without 500 crashes."""
     client, secret = _build_test_env(tmp_path)
 
@@ -276,7 +276,7 @@ def test_phase4_06_failure_safety_fails_gracefully(tmp_path: Path) -> None:
 
 
 # 7. Production Readiness Release Gate
-def test_phase4_07_readiness_release_gate_evaluation(tmp_path: Path) -> None:
+def test_evidence_07_readiness_release_gate_evaluation(tmp_path: Path) -> None:
     """Readiness release gate evaluates READY, PARTIAL, or BLOCKED with exact evidence and reasons."""
     client, secret = _build_test_env(tmp_path)
     session = get_session_local()()
@@ -292,7 +292,7 @@ def test_phase4_07_readiness_release_gate_evaluation(tmp_path: Path) -> None:
 
 
 # 8. Performance Benchmark Validation
-def test_phase4_08_performance_benchmarks(tmp_path: Path) -> None:
+def test_evidence_08_performance_benchmarks(tmp_path: Path) -> None:
     """API endpoints and evaluation batch runs execute well within latency thresholds (< 2.0s)."""
     client, secret = _build_test_env(tmp_path)
 

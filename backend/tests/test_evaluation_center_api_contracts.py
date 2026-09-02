@@ -31,7 +31,7 @@ def _run_eval(client: TestClient, *, run_id: str) -> None:
     assert response.status_code == 200
 
 
-def test_phase11_evaluation_history_comparison_and_drilldown(tmp_path: Path) -> None:
+def test_evaluation_history_comparison_and_drilldown(tmp_path: Path) -> None:
     client = _build_client(tmp_path)
     _run_eval(client, run_id="phase11_run_001")
 
@@ -69,7 +69,7 @@ def test_phase11_evaluation_history_comparison_and_drilldown(tmp_path: Path) -> 
     assert "operational" in drilldown_payload["data"]
 
 
-def test_phase11_evaluation_comparison_not_found(tmp_path: Path) -> None:
+def test_evaluation_comparison_not_found(tmp_path: Path) -> None:
     client = _build_client(tmp_path)
     response = client.get("/api/v1/evaluation/missing_run/comparison")
     assert response.status_code == 404

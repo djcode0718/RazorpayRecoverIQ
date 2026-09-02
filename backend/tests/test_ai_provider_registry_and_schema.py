@@ -22,7 +22,7 @@ def _sample_context() -> DiagnosisContext:
 
 
 def test_registry_resolves_mock_provider(tmp_path: Path) -> None:
-    os.environ["RECOVERIQ_DB_URL"] = f"sqlite:///{tmp_path / 'phase5_provider.db'}"
+    os.environ["RECOVERIQ_DB_URL"] = f"sqlite:///{tmp_path / 'test_provider.db'}"
     os.environ["AI_PROVIDER"] = "mock"
     get_settings.cache_clear()
 

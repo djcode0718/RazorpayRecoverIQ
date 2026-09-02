@@ -8,7 +8,7 @@ from .models import PolicyEvaluation, RecoveryAttempt, RecoveryDecision, Revenue
 from .state_machine import RecoveryState, can_transition_recovery
 
 
-POLICY_VERSION = "phase6-v1"
+POLICY_VERSION = "v1.0"
 MAX_AMOUNT_MINOR = 900_000
 MIN_CONFIDENCE_PCT = 60
 MAX_RETRY_ATTEMPTS = 3

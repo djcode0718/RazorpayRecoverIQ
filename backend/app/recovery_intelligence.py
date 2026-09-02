@@ -159,7 +159,7 @@ def _persist_recovery_decision(
         provider=provider_name,
         model=model_name,
         model_version=model_name,
-        prompt_version="phase5-v1",
+        prompt_version="v1.0",
         schema_version=DIAGNOSIS_SCHEMA_VERSION,
     )
     db.add(decision)
@@ -227,7 +227,7 @@ def _persist_escalate_safe_fallback(
         provider=provider_name,
         model=model_name,
         model_version=model_name,
-        prompt_version="phase5-v1",
+        prompt_version="v1.0",
         schema_version=DIAGNOSIS_SCHEMA_VERSION,
     )
     db.add(decision)

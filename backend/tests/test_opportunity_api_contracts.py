@@ -97,7 +97,7 @@ def _seed_opportunity_chain() -> int:
             economic_check=True,
             duplicate_check=True,
             environment_check=True,
-            policy_version="phase6-v1",
+            policy_version="v1.0",
         )
         session.add(policy)
         session.commit()
@@ -238,7 +238,7 @@ def _seed_semantic_case(
             economic_check=True,
             duplicate_check=not duplicate_block,
             environment_check=True,
-            policy_version="phase6-v1",
+            policy_version="v1.0",
         )
         session.add(policy)
         session.commit()
@@ -281,7 +281,7 @@ def _seed_semantic_case(
         session.close()
 
 
-def test_phase10_opportunities_list_and_detail(tmp_path: Path) -> None:
+def test_opportunities_list_and_detail(tmp_path: Path) -> None:
     client = _build_client(tmp_path)
     opportunity_id = _seed_opportunity_chain()
 
@@ -322,7 +322,7 @@ def test_phase10_opportunities_list_and_detail(tmp_path: Path) -> None:
     assert detail_payload["data"]["timeline_groups"][0]["group"] == "Signal"
 
 
-def test_phase10_opportunities_filters_search_and_sort(tmp_path: Path) -> None:
+def test_opportunities_filters_search_and_sort(tmp_path: Path) -> None:
     client = _build_client(tmp_path)
     _ = _seed_opportunity_chain()
 
@@ -335,7 +335,7 @@ def test_phase10_opportunities_filters_search_and_sort(tmp_path: Path) -> None:
     assert payload["data"]["filters"]["sort_by"] == "risk_desc"
 
 
-def test_phase10_opportunities_pagination_metadata(tmp_path: Path) -> None:
+def test_opportunities_pagination_metadata(tmp_path: Path) -> None:
     client = _build_client(tmp_path)
     _ = _seed_opportunity_chain()
 
@@ -388,7 +388,7 @@ def test_phase10_opportunities_pagination_metadata(tmp_path: Path) -> None:
     assert payload_three["data"]["has_prev"] is True
 
 
-def test_phase10_opportunities_cursor_pagination_mode(tmp_path: Path) -> None:
+def test_opportunities_cursor_pagination_mode(tmp_path: Path) -> None:
     client = _build_client(tmp_path)
     _ = _seed_opportunity_chain()
 
@@ -440,7 +440,7 @@ def test_phase10_opportunities_cursor_pagination_mode(tmp_path: Path) -> None:
     assert payload_two["data"]["has_prev"] is True
 
 
-def test_phase10_cursor_pagination_rejects_unsupported_sort(tmp_path: Path) -> None:
+def test_cursor_pagination_rejects_unsupported_sort(tmp_path: Path) -> None:
     client = _build_client(tmp_path)
     _ = _seed_opportunity_chain()
 
@@ -451,7 +451,7 @@ def test_phase10_cursor_pagination_rejects_unsupported_sort(tmp_path: Path) -> N
     assert payload["error"]["code"] == "CURSOR_SORT_NOT_SUPPORTED"
 
 
-def test_phase10_cursor_pagination_rejects_invalid_cursor(tmp_path: Path) -> None:
+def test_cursor_pagination_rejects_invalid_cursor(tmp_path: Path) -> None:
     client = _build_client(tmp_path)
     _ = _seed_opportunity_chain()
 
@@ -462,7 +462,7 @@ def test_phase10_cursor_pagination_rejects_invalid_cursor(tmp_path: Path) -> Non
     assert payload["error"]["code"] == "INVALID_CURSOR"
 
 
-def test_phase10_semantic_states_for_success_failure_pending_duplicate_blocked_and_escalated(tmp_path: Path) -> None:
+def test_semantic_states_for_success_failure_pending_duplicate_blocked_and_escalated(tmp_path: Path) -> None:
     client = _build_client(tmp_path)
 
     success_id = _seed_semantic_case(
@@ -529,7 +529,7 @@ def test_phase10_semantic_states_for_success_failure_pending_duplicate_blocked_a
     assert escalated_detail["semantic_states"]["business_outcome"] == "NOT_RECOVERED"
 
 
-def test_phase10_opportunity_detail_not_found(tmp_path: Path) -> None:
+def test_opportunity_detail_not_found(tmp_path: Path) -> None:
     client = _build_client(tmp_path)
     response = client.get("/api/v1/opportunities/999999")
     assert response.status_code == 404
@@ -538,7 +538,7 @@ def test_phase10_opportunity_detail_not_found(tmp_path: Path) -> None:
     assert payload["error"]["code"] == "OPPORTUNITY_NOT_FOUND"
 
 
-def test_phase10_opportunity_evaluate_execute_explanation_and_audit(tmp_path: Path) -> None:
+def test_opportunity_evaluate_execute_explanation_and_audit(tmp_path: Path) -> None:
     client = _build_client(tmp_path)
     opportunity_id = _seed_opportunity_chain()
 

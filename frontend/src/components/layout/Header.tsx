@@ -112,13 +112,20 @@ export function Header({
 
       <div className="hero-controls-block">
         <div className="hero-actions-row">
-          <button
-            onClick={onOpenDemoTour}
-            className="btn btn-tour-highlight btn-sm"
-            title="Open Guided Product Pitch Tour"
-          >
-            🎬 2-Min Demo Tour
-          </button>
+          {/* Demo Tour: Hidden by default. Enabled only via VITE_ENABLE_DEMO_TOUR=true or ?demo_tour=true for dev/reference */}
+          {(import.meta.env.VITE_ENABLE_DEMO_TOUR === "true" ||
+            (typeof window !== "undefined" &&
+              (window.location.search.includes("demo_tour=true") ||
+                window.localStorage.getItem("enable_demo_tour") === "true"))) &&
+            onOpenDemoTour && (
+              <button
+                onClick={onOpenDemoTour}
+                className="btn btn-tour-highlight btn-sm"
+                title="Open Guided Product Pitch Tour"
+              >
+                🎬 2-Min Demo Tour
+              </button>
+            )}
 
           <button
             onClick={onRefresh}

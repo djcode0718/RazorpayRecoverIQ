@@ -17,7 +17,7 @@ def _build_client(tmp_path: Path) -> TestClient:
     return TestClient(create_app())
 
 
-def test_phase12_failure_demo_endpoints_are_user_visible(tmp_path: Path) -> None:
+def test_security_failure_demo_endpoints_are_user_visible(tmp_path: Path) -> None:
     client = _build_client(tmp_path)
 
     scenarios_response = client.get("/api/v1/failure-demos")
@@ -58,7 +58,7 @@ def test_phase12_failure_demo_endpoints_are_user_visible(tmp_path: Path) -> None
     assert "actual_behavior" in ai_invalid_payload["data"]
 
 
-def test_phase12_validation_error_and_safe_envelope(tmp_path: Path) -> None:
+def test_security_validation_error_and_safe_envelope(tmp_path: Path) -> None:
     client = _build_client(tmp_path)
 
     response = client.get("/api/v1/opportunities?page=0")
@@ -69,7 +69,7 @@ def test_phase12_validation_error_and_safe_envelope(tmp_path: Path) -> None:
     assert "query.page" in payload["error"]["fields"]
 
 
-def test_phase12_redaction_guard_masks_sensitive_fields() -> None:
+def test_security_redaction_guard_masks_sensitive_fields() -> None:
     payload = {
         "authorization": "Bearer test",
         "nested": {

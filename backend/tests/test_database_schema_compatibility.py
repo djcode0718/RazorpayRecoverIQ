@@ -53,7 +53,7 @@ def test_init_db_heals_missing_policy_evaluations_evaluated_rules(tmp_path: Path
             economic_check=True,
             duplicate_check=True,
             environment_check=True,
-            policy_version="phase6-v1",
+            policy_version="v1.0",
         )
         session.add(row)
         session.commit()

@@ -511,7 +511,7 @@ All configuration is managed through Pydantic Settings with sensible defaults:
 
 ---
 
-## 16. 🏆 Recommended Judge Walkthrough
+## 16. 🏆 Recommended Guided Walkthrough
 
 Follow this 3-minute evaluation path to inspect the complete system:
 
@@ -574,10 +574,10 @@ By placing mathematical, deterministic code guardrails between AI analysis and p
 
 ## 19. Limitations & Demo Scope
 
-To maintain complete transparency for buildathon evaluation:
+To maintain complete transparency:
 - **Simulation / Test Mode**: All payment link generation and webhook handling operate in Razorpay Test Mode or local deterministic simulation. No real customer cards are charged.
 - **Holdout Dataset**: The Evaluation benchmark is computed against a standardized synthetic test dataset modeling high-frequency failure archetypes.
-- **Single-Merchant Scope**: The current buildathon implementation models a single merchant account (`acc_demo_seed`); multi-tenant merchant isolation is architected for Phase 2.
+- **Single-Merchant Scope**: The current implementation models a single merchant account (`acc_demo_seed`); multi-tenant merchant isolation is architected for future releases.
 
 ---
 

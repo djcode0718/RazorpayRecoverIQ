@@ -134,7 +134,7 @@ def test_dashboard_summary_aggregates_seeded_data(tmp_path: Path) -> None:
             model="mock-v1",
             model_version="v1",
             prompt_version="p1",
-            schema_version="phase5-v1",
+            schema_version="v1.0",
         )
         session.add_all([decision_open, decision_escalate])
         session.commit()
@@ -153,7 +153,7 @@ def test_dashboard_summary_aggregates_seeded_data(tmp_path: Path) -> None:
             economic_check=True,
             duplicate_check=True,
             environment_check=True,
-            policy_version="phase6-v1",
+            policy_version="v1.0",
         )
         policy_deny = PolicyEvaluation(
             opportunity_id=opportunity_resolved.id,
@@ -167,7 +167,7 @@ def test_dashboard_summary_aggregates_seeded_data(tmp_path: Path) -> None:
             economic_check=True,
             duplicate_check=True,
             environment_check=True,
-            policy_version="phase6-v1",
+            policy_version="v1.0",
         )
         session.add_all([policy_allow, policy_deny])
         session.commit()

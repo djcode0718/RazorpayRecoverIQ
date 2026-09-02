@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-RecoverIQ - Phase 2 Razorpay Test Mode Money Loop Verification Script
+RecoverIQ — Razorpay Test Mode Money Loop Verification Script
 
 This script verifies:
 1. Credentials loading (RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET, RAZORPAY_WEBHOOK_SECRET)
@@ -51,7 +51,7 @@ def sign_payload(payload_bytes: bytes, secret: str) -> str:
 
 def main() -> int:
     print("=" * 70)
-    print("  RECOVERIQ — PHASE 2: RAZORPAY TEST MODE MONEY-RECOVERY LOOP")
+    print("  RECOVERIQ — RAZORPAY TEST MODE MONEY-RECOVERY LOOP")
     print("=" * 70)
 
     settings = get_settings()
@@ -241,7 +241,7 @@ def main() -> int:
     print("\n" + "=" * 70)
     print("  ALL 10 VERIFICATION GATES PASSED SUCCESSFULLY!")
     print("=" * 70)
-    print("\nPHASE 2 COMPLETE — RAZORPAY MONEY LOOP VERIFIED\n")
+    print("\nVERIFICATION COMPLETE — RAZORPAY MONEY LOOP VERIFIED\n")
     return 0
 
 

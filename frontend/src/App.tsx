@@ -871,7 +871,7 @@ export function App() {
           onClose={() => setSuccessModalData({ isOpen: false, opportunity: null, detail: null })}
         />
 
-        {/* 2-Minute Buildathon Judge Guided Pitch Modal */}
+        {/* 2-Minute Interactive Guided Tour Modal */}
         <GuidedDemoModal
           isOpen={isDemoTourOpen}
           onClose={() => setIsDemoTourOpen(false)}

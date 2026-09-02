@@ -33,12 +33,12 @@ def _build_test_client(
     tmp_path: Path,
     *,
     adapter_mode: str = "simulation",
-    key_id: str = "rzp_test_phase1_key",
-    key_secret: str = "phase1_secret",
+    key_id: str = "rzp_test_fixture_key",
+    key_secret: str = "fixture_secret",
     ai_provider: str = "mock",
-    secret: str = "whsec_phase1_acceptance",
+    secret: str = "whsec_fixture_acceptance",
 ) -> tuple[TestClient, str]:
-    db_file = tmp_path / f"phase1_test_{os.urandom(4).hex()}.db"
+    db_file = tmp_path / f"test_{os.urandom(4).hex()}.db"
     os.environ["RECOVERIQ_DB_URL"] = f"sqlite:///{db_file}"
     os.environ["RAZORPAY_WEBHOOK_SECRET"] = secret
     os.environ["PAYMENT_ADAPTER_MODE"] = adapter_mode

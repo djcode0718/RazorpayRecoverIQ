@@ -82,7 +82,7 @@ def _captured_payload(*, event_id: str, payment_id: str, created_at: int, amount
     }
 
 
-def test_phase7_detection_to_verification_flow_persists_full_chain(tmp_path: Path) -> None:
+def test_workflow_detection_to_verification_flow_persists_full_chain(tmp_path: Path) -> None:
     client, secret = _build_client(tmp_path)
 
     failed_response = _post_webhook(
@@ -153,7 +153,7 @@ def test_phase7_detection_to_verification_flow_persists_full_chain(tmp_path: Pat
         session.close()
 
 
-def test_phase7_policy_block_still_persists_chain_and_blocks_execution(tmp_path: Path) -> None:
+def test_workflow_policy_block_still_persists_chain_and_blocks_execution(tmp_path: Path) -> None:
     client, secret = _build_client(tmp_path)
 
     failed_response = _post_webhook(
