@@ -134,7 +134,7 @@ def execute_recovery_attempt(
         attempt.failure_code = "ADAPTER_ERROR"
         attempt.failure_reason = str(exc)
         db.commit()
-        raise ValueError("adapter_request_failed") from exc
+        raise ValueError(str(exc)) from exc
 
     attempt.status = "EXECUTED"
     attempt.executed_at = now

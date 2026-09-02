@@ -295,7 +295,13 @@ export function OpportunityDrawer({
                           : "error"
                       }`}
                     >
-                      <span>{executionMessage}</span>
+                      <span>
+                        {executionMessage === "adapter_request_failed"
+                          ? "Razorpay API request failed. Please wait a moment before retrying."
+                          : executionMessage === "adapter_timeout"
+                          ? "Razorpay API timed out. Please retry in a moment."
+                          : executionMessage}
+                      </span>
                     </div>
                   )}
 

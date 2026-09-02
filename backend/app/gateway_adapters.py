@@ -210,12 +210,27 @@ class RazorpayPaymentAdapter(PaymentAdapter):
             except Exception:  # noqa: BLE001
                 pass
 
+        if response.status_code == 429:
+            import time
+            time.sleep(1.2)
+            try:
+                response = httpx.post(
+                    f"{self._base_url}/v1/payment_links",
+                    json=payload,
+                    auth=(self._key_id, self._key_secret),
+                    timeout=8.0,
+                )
+            except Exception:  # noqa: BLE001
+                pass
+
         if response.status_code >= 400:
+            if response.status_code == 429:
+                raise PaymentAdapterError("Razorpay rate limit reached (429 Too Many Requests). Please wait a moment before retrying.")
             try:
                 error_payload = response.json()
             except Exception:  # noqa: BLE001
                 error_payload = {"status_code": response.status_code}
-            raise PaymentAdapterError(f"razorpay_payment_link_error:{error_payload}")
+            raise PaymentAdapterError(f"Razorpay API error: {error_payload}")
 
         data = response.json()
         payment_link_id = str(data.get("id") or "")
