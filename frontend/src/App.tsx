@@ -536,6 +536,7 @@ export function App() {
           onResetDemo={handleResetDemo}
           onToggleAutoRefresh={setAutoRefreshEnabled}
           onOpenDemoTour={() => setIsDemoTourOpen(true)}
+          activeTab={activeTab}
         />
 
         {primaryError && (

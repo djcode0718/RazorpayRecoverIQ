@@ -128,9 +128,10 @@ export function TrendChart({ data, error, onRetry }: TrendChartProps) {
                   x={paddingLeft - 8}
                   y={yVal + 4}
                   textAnchor="end"
-                  fontSize="10"
-                  fill="var(--text-muted)"
-                  fontFamily="Inter, sans-serif"
+                  fontSize="11"
+                  fontWeight="500"
+                  fill="var(--text-soft)"
+                  fontFamily="'Inter', -apple-system, BlinkMacSystemFont, sans-serif"
                 >
                   {formatMinorCurrency(Math.round(labelVal))}
                 </text>
@@ -165,9 +166,10 @@ export function TrendChart({ data, error, onRetry }: TrendChartProps) {
               x={getX(i)}
               y={height - 8}
               textAnchor="middle"
-              fontSize="10"
-              fill="var(--text-muted)"
-              fontFamily="Inter, sans-serif"
+              fontSize="11"
+              fontWeight="500"
+              fill="var(--text-soft)"
+              fontFamily="'Inter', -apple-system, BlinkMacSystemFont, sans-serif"
             >
               {d.display_date}
             </text>

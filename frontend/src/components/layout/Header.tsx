@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { OperatingStatus } from "../../types";
 import { ThemeToggle } from "../common/ThemeToggle";
 
@@ -13,6 +13,7 @@ type HeaderProps = {
   onResetDemo: () => void;
   onToggleAutoRefresh: (enabled: boolean) => void;
   onOpenDemoTour: () => void;
+  activeTab?: string;
 };
 
 export function Header({
@@ -26,8 +27,59 @@ export function Header({
   onResetDemo,
   onToggleAutoRefresh,
   onOpenDemoTour,
+  activeTab,
 }: HeaderProps) {
   const [showSimControls, setShowSimControls] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+
+  // Close dropdown on outside click, Escape key, or scrolling
+  useEffect(() => {
+    if (!showSimControls) return;
+
+    const handlePointerDown = (event: PointerEvent | MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setShowSimControls(false);
+      }
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setShowSimControls(false);
+        triggerRef.current?.focus();
+      }
+    };
+
+    const handleScroll = () => {
+      setShowSimControls(false);
+    };
+
+    document.addEventListener("pointerdown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("scroll", handleScroll, { passive: true, capture: true });
+
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("scroll", handleScroll, { capture: true });
+    };
+  }, [showSimControls]);
+
+  // Close dropdown whenever active tab changes
+  useEffect(() => {
+    setShowSimControls(false);
+  }, [activeTab]);
+
+  const handleSeedClick = () => {
+    setShowSimControls(false);
+    onSeedDemo();
+  };
+
+  const handleResetClick = () => {
+    setShowSimControls(false);
+    onResetDemo();
+  };
 
   const isPaymentTest = operatingStatus.payment_environment === "RAZORPAY TEST";
   const isWebhookGood = operatingStatus.webhook === "VERIFIED" || operatingStatus.webhook === "CONFIGURED";
@@ -87,31 +139,37 @@ export function Header({
           </label>
 
           {/* Compact Simulation Menu */}
-          <div className="sim-dropdown-wrapper">
+          <div className="sim-dropdown-wrapper" ref={dropdownRef}>
             <button
-              onClick={() => setShowSimControls(!showSimControls)}
+              ref={triggerRef}
+              id="sim-dropdown-trigger"
+              onClick={() => setShowSimControls((prev) => !prev)}
               className="btn btn-tertiary btn-sm"
               title="Demo & Simulation Actions"
+              aria-haspopup="true"
+              aria-expanded={showSimControls}
+              aria-controls="sim-dropdown-menu"
             >
               ⚙ Simulation ▾
             </button>
             {showSimControls && (
-              <div className="sim-dropdown-menu">
+              <div
+                id="sim-dropdown-menu"
+                role="menu"
+                aria-labelledby="sim-dropdown-trigger"
+                className="sim-dropdown-menu"
+              >
                 <button
-                  onClick={() => {
-                    onSeedDemo();
-                    setShowSimControls(false);
-                  }}
+                  role="menuitem"
+                  onClick={handleSeedClick}
                   disabled={isDemoMutating || isLoading}
                   className="sim-menu-item"
                 >
                   🌱 Seed Failure Scenarios
                 </button>
                 <button
-                  onClick={() => {
-                    onResetDemo();
-                    setShowSimControls(false);
-                  }}
+                  role="menuitem"
+                  onClick={handleResetClick}
                   disabled={isDemoMutating || isLoading}
                   className="sim-menu-item danger"
                 >
