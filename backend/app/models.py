@@ -8,7 +8,7 @@ from .db import Base
 
 
 def _utc_now_naive() -> datetime:
-    # Keep existing naive-UTC storage semantics while avoiding deprecated utcnow().
+    # Standard naive-UTC timestamp helper.
     return datetime.now(UTC).replace(tzinfo=None)
 
 

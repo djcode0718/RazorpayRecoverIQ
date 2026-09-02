@@ -63,8 +63,8 @@ def main() -> int:
     webhook_secret = settings.razorpay_webhook_secret or os.environ.get("RAZORPAY_WEBHOOK_SECRET", "")
 
     print(f"  • RAZORPAY_KEY_ID:        {mask_secret(key_id)}")
-    print(f"  • RAZORPAY_KEY_SECRET:    {mask_secret(key_secret)}")
-    print(f"  • RAZORPAY_WEBHOOK_SECRET: {mask_secret(webhook_secret)}")
+    print(f"  • RAZORPAY_KEY_SECRET:    {'[CONFIGURED]' if key_secret else '[NOT SET]'}")
+    print(f"  • RAZORPAY_WEBHOOK_SECRET: {'[CONFIGURED]' if webhook_secret else '[NOT SET]'}")
 
     has_live_keys = key_id.startswith("rzp_test_") and bool(key_secret)
     print(f"  • Test Mode Keys Configured: {'YES' if has_live_keys else 'NO (Simulation / Mock Keys will be used)'}")

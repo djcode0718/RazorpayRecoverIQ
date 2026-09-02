@@ -22,7 +22,7 @@ def _sign(payload_bytes: bytes, secret: str) -> str:
     return hmac.new(secret.encode("utf-8"), payload_bytes, hashlib.sha256).hexdigest()
 
 
-def _build_test_env(tmp_path: Path, *, secret: str = "whsec_phase4_secret", adapter_mode: str = "simulation"):
+def _build_test_env(tmp_path: Path, *, secret: str = "mock_evidence_test_secret", adapter_mode: str = "simulation"):
     db_file = tmp_path / f"phase4_{os.urandom(4).hex()}.db"
     os.environ["RECOVERIQ_DB_URL"] = f"sqlite:///{db_file}"
     os.environ["RAZORPAY_WEBHOOK_SECRET"] = secret

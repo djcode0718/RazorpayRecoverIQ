@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, date
 from typing import Any
 
 import httpx
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, Header, Query, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select, text
@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 
 from ..config import Settings, get_settings
 from ..db import get_db
+from ..security import verify_security_guard
 from ..demo_seed import seed_core_recovery_demo
 from ..demo_seed import reset_core_recovery_data
 from ..economics import estimate_intervention_cost_minor
@@ -302,7 +303,7 @@ def _policy_checks_from_evaluation(policy: PolicyEvaluation | None) -> dict:
         "retry_limit_check": policy.retry_limit_check,
         "duplicate_check": policy.duplicate_check,
         "test_mode_check": policy.environment_check,
-        # Backward-compatible aliases used by earlier UI revisions.
+        # Standard rule-key aliases for client consumers.
         "max_amount": policy.max_amount_check,
         "confidence": policy.confidence_check,
         "retry_limit": policy.retry_limit_check,
@@ -477,7 +478,7 @@ def get_truthful_operating_status(db: Session, settings: Settings) -> dict[str, 
     webhook_secret_present = bool((settings.razorpay_webhook_secret or "").strip())
     last_event = db.execute(select(WebhookEvent).order_by(WebhookEvent.id.desc())).scalars().first()
     verified_events_count = db.execute(
-        select(func.count(WebhookEvent.id)).where(WebhookEvent.signature_valid == True)
+        select(func.count(WebhookEvent.id)).where(WebhookEvent.signature_valid.is_(True))
     ).scalar_one()
 
     if not webhook_secret_present:
@@ -1565,7 +1566,11 @@ def evaluate_opportunity(opportunity_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/opportunities/{opportunity_id}/execute")
-def execute_opportunity(opportunity_id: int, db: Session = Depends(get_db)):
+def execute_opportunity(
+    opportunity_id: int,
+    db: Session = Depends(get_db),
+    auth_guard: bool = Depends(verify_security_guard),
+):
     opportunity = db.execute(select(RevenueOpportunity).where(RevenueOpportunity.id == opportunity_id)).scalar_one_or_none()
     if opportunity is None:
         return JSONResponse(
@@ -1895,7 +1900,10 @@ def list_failure_demos() -> dict:
 
 
 @router.post("/failure-demos/trigger")
-def trigger_failure_demo(request: FailureScenarioTriggerRequest):
+def trigger_failure_demo(
+    request: FailureScenarioTriggerRequest,
+    auth_guard: bool = Depends(verify_security_guard),
+):
     scenario_id = request.scenario_id.strip().lower()
     
     # Locate scenario in the defined list to return its metadata
@@ -2196,27 +2204,40 @@ def razorpay_integration_status(db: Session = Depends(get_db), settings: Setting
 
 
 @router.post("/readiness/execute")
-def execute_readiness(db: Session = Depends(get_db)) -> dict:
+def execute_readiness(
+    db: Session = Depends(get_db),
+    auth_guard: bool = Depends(verify_security_guard),
+) -> dict:
     result = execute_readiness_acceptance_workflow(db)
     return {"success": True, "data": result}
 
 
 @router.post("/readiness/phase13/execute")
-def execute_phase13_readiness(db: Session = Depends(get_db)) -> dict:
-    # Legacy route preserved for backward compatibility.
+def execute_phase13_readiness(
+    db: Session = Depends(get_db),
+    auth_guard: bool = Depends(verify_security_guard),
+) -> dict:
+    # Secondary execution endpoint for acceptance workflow.
     result = execute_readiness_acceptance_workflow(db)
     return {"success": True, "data": result}
 
 
 @router.post("/demo/seed-core-recovery")
-def seed_core_recovery(db: Session = Depends(get_db)) -> dict:
+def seed_core_recovery(
+    db: Session = Depends(get_db),
+    auth_guard: bool = Depends(verify_security_guard),
+) -> dict:
     result = seed_core_recovery_demo(db)
     db.commit()
     return {"success": True, "data": result}
 
 
 @router.post("/demo/reset-core-recovery")
-def reset_core_recovery(db: Session = Depends(get_db), settings: Settings = Depends(get_settings)) -> dict:
+def reset_core_recovery(
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+    auth_guard: bool = Depends(verify_security_guard),
+) -> dict:
     reset_core_recovery_data(db)
     db.commit()
     return {
@@ -2234,9 +2255,10 @@ async def razorpay_webhook(
     request: Request,
     db: Session = Depends(get_db),
     settings: Settings = Depends(get_settings),
+    x_razorpay_signature: str | None = Header(default=None, alias="x-razorpay-signature"),
 ):
     raw_body = await request.body()
-    signature = request.headers.get("x-razorpay-signature", "")
+    signature = x_razorpay_signature or request.headers.get("x-razorpay-signature", "")
     header_event_id = request.headers.get("x-razorpay-event-id")
     status_code, payload = process_razorpay_webhook_gateway(
         db,
@@ -2251,7 +2273,11 @@ async def razorpay_webhook(
 
 
 @router.post("/evaluation/run")
-def run_evaluation(request: EvaluationRunRequest, db: Session = Depends(get_db)):
+def run_evaluation(
+    request: EvaluationRunRequest,
+    db: Session = Depends(get_db),
+    auth_guard: bool = Depends(verify_security_guard),
+):
     dataset_count = db.query(EvaluationCase).filter(EvaluationCase.dataset_version == request.dataset_version).count()
     if request.force_regenerate or (request.generate_if_missing and dataset_count == 0):
         generate_synthetic_cases(

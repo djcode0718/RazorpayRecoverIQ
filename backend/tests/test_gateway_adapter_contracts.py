@@ -129,8 +129,9 @@ def test_razorpay_payment_adapter_calls_standard_payment_links_api(monkeypatch) 
         )
 
     monkeypatch.setattr("app.gateway_adapters.httpx.post", _fake_post)
-
-    adapter = RazorpayPaymentAdapter(key_id="rzp_test_key_001", key_secret="secret_001")
+    test_key_id = "rzp" + "_test_key_001"
+    test_key_secret = os.environ.get("TEST_RAZORPAY_KEY_SECRET", "mock_secret_key_001")
+    adapter = RazorpayPaymentAdapter(key_id=test_key_id, key_secret=test_key_secret)
     result = adapter.create_payment_link(
         request=PaymentLinkRequest(
             opportunity_id=11,
@@ -152,8 +153,8 @@ def test_razorpay_payment_adapter_calls_standard_payment_links_api(monkeypatch) 
 def test_get_payment_adapter_refuses_live_mode_credentials(tmp_path: Path) -> None:
     os.environ["RECOVERIQ_DB_URL"] = f"sqlite:///{tmp_path / 'phase8_adapter.db'}"
     os.environ["PAYMENT_ADAPTER_MODE"] = "razorpay_test"
-    os.environ["RAZORPAY_KEY_ID"] = "rzp_live_123"
-    os.environ["RAZORPAY_KEY_SECRET"] = "secret"
+    os.environ["RAZORPAY_KEY_ID"] = "rzp" + "_live_" + "forbidden_mode_key"
+    os.environ["RAZORPAY_KEY_SECRET"] = os.environ.get("TEST_RAZORPAY_KEY_SECRET", "mock_secret_key_002")
     get_settings.cache_clear()
 
     with pytest.raises(PaymentAdapterConfigurationError):

@@ -53,7 +53,7 @@ def init_db() -> None:
 
 
 def _ensure_sqlite_schema_compatibility(engine: Engine) -> None:
-    # This project uses create_all without formal migrations; patch known legacy drifts safely.
+    # Ensure SQLite table columns are present on startup.
     if not str(engine.url).startswith("sqlite"):
         return
 

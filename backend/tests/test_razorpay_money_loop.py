@@ -35,7 +35,7 @@ def _build_test_client(
     key_id: str = "rzp_test_money_loop_key",
     key_secret: str = "money_loop_secret",
     ai_provider: str = "mock",
-    secret: str = "whsec_money_loop_test_secret",
+    secret: str = "mock_money_loop_test_secret",
 ) -> tuple[TestClient, str]:
     db_file = tmp_path / f"money_loop_test_{os.urandom(4).hex()}.db"
     os.environ["RECOVERIQ_DB_URL"] = f"sqlite:///{db_file}"

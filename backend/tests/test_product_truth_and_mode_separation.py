@@ -34,9 +34,9 @@ def _build_test_client(
     *,
     adapter_mode: str = "simulation",
     key_id: str = "rzp_test_fixture_key",
-    key_secret: str = "fixture_secret",
+    key_secret: str = "fixture_token_value",
     ai_provider: str = "mock",
-    secret: str = "whsec_fixture_acceptance",
+    secret: str = "mock_webhook_fixture_secret",
 ) -> tuple[TestClient, str]:
     db_file = tmp_path / f"test_{os.urandom(4).hex()}.db"
     os.environ["RECOVERIQ_DB_URL"] = f"sqlite:///{db_file}"

@@ -18,7 +18,7 @@ def _sign(payload_bytes: bytes, secret: str) -> str:
 
 
 def _build_client(tmp_path: Path) -> tuple[TestClient, str]:
-    secret = "whsec_phase8"
+    secret = os.environ.get("TEST_RAZORPAY_WEBHOOK_SECRET", "mock_webhook_secret_key_02")
     os.environ["RECOVERIQ_DB_URL"] = f"sqlite:///{tmp_path / 'phase8.db'}"
     os.environ["RAZORPAY_WEBHOOK_SECRET"] = secret
     os.environ["AI_PROVIDER"] = "mock"

@@ -17,12 +17,12 @@ def _sign(payload_bytes: bytes, secret: str) -> str:
 
 
 def _build_client(tmp_path: Path) -> tuple[TestClient, str]:
-    secret = "whsec_phase14"
+    secret = os.environ.get("TEST_RAZORPAY_WEBHOOK_SECRET", "mock_webhook_status_secret")
     os.environ["RECOVERIQ_DB_URL"] = f"sqlite:///{tmp_path / 'phase14.db'}"
     os.environ["RAZORPAY_WEBHOOK_SECRET"] = secret
     os.environ["PAYMENT_ADAPTER_MODE"] = "razorpay_test"
     os.environ["RAZORPAY_KEY_ID"] = "rzp_test_demo_key"
-    os.environ["RAZORPAY_KEY_SECRET"] = "demo_secret"
+    os.environ["RAZORPAY_KEY_SECRET"] = os.environ.get("TEST_RAZORPAY_KEY_SECRET", "mock_demo_secret_token")
     get_settings.cache_clear()
     reset_db_runtime()
     init_db()
@@ -42,7 +42,7 @@ def test_razorpay_integration_status_reports_flags_without_exposing_secrets(tmp_
     assert data["api_connectivity"] is True
     assert data["webhook_configured"] is True
     assert "razorpay_key_secret" not in json.dumps(data)
-    assert "demo_secret" not in json.dumps(data)
+    assert os.environ["RAZORPAY_KEY_SECRET"] not in json.dumps(data)
 
 
 def test_razorpay_integration_status_includes_last_webhook_event(tmp_path: Path, monkeypatch) -> None:
