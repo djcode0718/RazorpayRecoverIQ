@@ -38,17 +38,17 @@ export function Header({
       <div className="hero-brand-block">
         <div className="brand-badge-row">
           <span className="brand-logo-text">RecoverIQ</span>
-          <span className="brand-sub-badge">REVENUE RECOVERY OS</span>
+          <span className="brand-sub-badge">Revenue Recovery OS</span>
           <div className="compact-status-pills">
             <span className={`status-dot-pill ${isPaymentTest ? "good" : "info"}`} title="Payment Gateway Environment">
               <span className="pulse-dot" />
-              {operatingStatus.payment_environment}
+              {operatingStatus.payment_environment === "RAZORPAY TEST" ? "Razorpay Test" : operatingStatus.payment_environment}
             </span>
             <span className={`status-dot-pill ${isWebhookGood ? "good" : "warn"}`} title="Webhook Verification Status">
-              HMAC {operatingStatus.webhook}
+              HMAC {isWebhookGood ? "Verified" : "Waiting"}
             </span>
             <span className={`status-dot-pill ${isPolicyGood ? "good" : "bad"}`} title="Deterministic Safety Gate Policy">
-              POLICY {operatingStatus.policy_engine}
+              Policy {isPolicyGood ? "7/7 Active" : "Degraded"}
             </span>
           </div>
         </div>

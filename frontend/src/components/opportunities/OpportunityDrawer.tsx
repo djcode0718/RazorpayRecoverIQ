@@ -153,11 +153,11 @@ export function OpportunityDrawer({
           <div className="drawer-header-left">
             <div className="drawer-title-row">
               <h2>Opportunity #{oppId}</h2>
-              <Badge text="RAZORPAY TEST" tone="info" size="sm" />
-              {isResolved && <Badge text="✓ RECOVERED" tone="good" size="sm" />}
+              <Badge text="Razorpay Test" tone="info" size="sm" />
+              {isResolved && <Badge text="✓ Recovered" tone="good" size="sm" />}
             </div>
             <p className="panel-copy">
-              Customer: <strong>{custName}</strong> &bull; Payment Failure Analysis
+              Customer: <strong>{custName}</strong> &bull; Payment failure diagnosis &amp; recovery
             </p>
           </div>
           <button
@@ -177,16 +177,16 @@ export function OpportunityDrawer({
           ) : (
             <div className="detail-layout">
               {/* SECTION 1: FINANCIAL & CONVICTION HIERARCHY */}
-              <section className="drawer-financial-banner panel">
+              <section className="drawer-section drawer-financial-section">
                 <div className="drawer-kpi-grid">
                   <div className="drawer-kpi-item">
-                    <span className="drawer-kpi-lbl">RECOVERABLE EXPOSURE</span>
+                    <span className="drawer-kpi-lbl">Recoverable Exposure</span>
                     <strong className="drawer-kpi-val">{formatMinorCurrency(amountAtRisk)}</strong>
                     <span className="drawer-kpi-sub">Total failed transaction value</span>
                   </div>
 
                   <div className="drawer-kpi-item">
-                    <span className="drawer-kpi-lbl">EXPECTED RECOVERY</span>
+                    <span className="drawer-kpi-lbl">Expected Recovery</span>
                     <strong className="drawer-kpi-val text-good">{formatMinorCurrency(expectedRecovery)}</strong>
                     <span className="drawer-kpi-sub">Conviction-weighted forecast</span>
                   </div>
@@ -194,25 +194,25 @@ export function OpportunityDrawer({
 
                 <div className="drawer-status-chips-row">
                   <div className="drawer-status-chip">
-                    <span className="chip-q">AI CONFIDENCE:</span>
-                    <strong className="text-good">{confPct}% High Confidence</strong>
+                    <span className="chip-q">AI Confidence:</span>
+                    <strong className="text-good">{confPct}% High Conviction</strong>
                   </div>
                   <div className="drawer-status-chip">
-                    <span className="chip-q">URGENCY:</span>
+                    <span className="chip-q">Urgency:</span>
                     <strong className="text-warn">High (T-24h window)</strong>
                   </div>
                   <div className="drawer-status-chip">
-                    <span className="chip-q">POLICY:</span>
-                    <strong className="text-good">✓ 7/7 Safety Checks Passed</strong>
+                    <span className="chip-q">Safety Gate:</span>
+                    <strong className="text-good">✓ 7/7 Checks Passed</strong>
                   </div>
                 </div>
               </section>
 
               {/* SECTION 2: AI DIAGNOSIS & WHY EXPLANATION */}
-              <section className="drawer-section-panel panel">
+              <section className="drawer-section">
                 <div className="drawer-section-head">
                   <div>
-                    <span className="section-step-tag">STEP 2 &bull; ML DIAGNOSIS</span>
+                    <span className="section-step-tag">Step 2 &bull; Failure Diagnosis</span>
                     <h3>AI Failure Classification</h3>
                   </div>
                   <Badge
@@ -248,10 +248,10 @@ export function OpportunityDrawer({
               </section>
 
               {/* SECTION 3: RECOMMENDED RECOVERY ACTION */}
-              <section className="drawer-section-panel panel">
+              <section className="drawer-section">
                 <div className="drawer-section-head">
                   <div>
-                    <span className="section-step-tag">STEP 3 &bull; RECOVERY ACTION</span>
+                    <span className="section-step-tag">Step 3 &bull; Recovery Action</span>
                     <h3>Recommended Recovery Action</h3>
                   </div>
                   <Badge text="Deterministic Gate" tone="good" size="sm" />
@@ -260,7 +260,7 @@ export function OpportunityDrawer({
                 <div className="action-recommendation-card">
                   <div className="action-card-header-row">
                     <div>
-                      <span className="action-type-label">RECOMMENDED ACTION</span>
+                      <span className="action-type-label">Recommended Action</span>
                       <h4 className="action-title-hero text-primary">
                         {formatActionTitle(recommendedAction)}
                       </h4>
@@ -270,19 +270,19 @@ export function OpportunityDrawer({
 
                   <div className="action-metrics-2grid">
                     <div className="action-metric-cell">
-                      <span className="act-lbl">RECOVERABLE AMOUNT</span>
+                      <span className="act-lbl">Recoverable Amount</span>
                       <strong className="act-val">{formatMinorCurrency(amountAtRisk)}</strong>
                     </div>
                     <div className="action-metric-cell">
-                      <span className="act-lbl">EXPECTED RECOVERY</span>
+                      <span className="act-lbl">Expected Recovery</span>
                       <strong className="act-val text-good">{formatMinorCurrency(expectedRecovery)}</strong>
                     </div>
                     <div className="action-metric-cell">
-                      <span className="act-lbl">RISK PROFILE</span>
+                      <span className="act-lbl">Risk Profile</span>
                       <strong className="act-val text-good">Low Risk (Transitive)</strong>
                     </div>
                     <div className="action-metric-cell">
-                      <span className="act-lbl">GATEWAY ENVIRONMENT</span>
+                      <span className="act-lbl">Gateway Environment</span>
                       <strong className="act-val">Razorpay Test Mode</strong>
                     </div>
                   </div>
@@ -354,10 +354,10 @@ export function OpportunityDrawer({
               </section>
 
               {/* SECTION 4: WORKFLOW STEPPER */}
-              <section className="drawer-section-panel panel">
+              <section className="drawer-section">
                 <div className="drawer-section-head">
                   <div>
-                    <span className="section-step-tag">STEP 4 &bull; WORKFLOW PROGRESS</span>
+                    <span className="section-step-tag">Step 4 &bull; Autonomous Progress</span>
                     <h3>Autonomous Recovery Progress</h3>
                   </div>
                 </div>
@@ -421,17 +421,17 @@ export function OpportunityDrawer({
               </section>
 
               {/* SECTION 5: VERIFIED BUSINESS OUTCOME */}
-              <section className="drawer-section-panel panel">
+              <section className="drawer-section">
                 <div className="drawer-section-head">
                   <div>
-                    <span className="section-step-tag">STEP 5 &bull; BUSINESS OUTCOME</span>
+                    <span className="section-step-tag">Step 5 &bull; Outcome Accounting</span>
                     <h3>Settlement & Outcome Verification</h3>
                   </div>
                 </div>
 
                 <div className="drawer-meta-2col">
                   <div>
-                    <span className="drawer-field-lbl">REALIZED REVENUE</span>
+                    <span className="drawer-field-lbl">Realized Revenue</span>
                     <strong className={`drawer-field-val ${isResolved ? "text-good" : ""}`}>
                       {isResolved ? formatMinorCurrency(amountAtRisk) : formatMinorCurrency(0)}
                     </strong>
@@ -440,10 +440,10 @@ export function OpportunityDrawer({
                     </span>
                   </div>
                   <div>
-                    <span className="drawer-field-lbl">VERIFICATION STATUS</span>
+                    <span className="drawer-field-lbl">Verification Status</span>
                     <div className="verification-badge-wrap">
                       <Badge
-                        text={detail?.action_traceability?.verification_status || "VERIFIED"}
+                        text={detail?.action_traceability?.verification_status || "Verified"}
                         tone={detail?.action_traceability?.verification_status === "FAILED" ? "bad" : "good"}
                         size="sm"
                       />
@@ -454,11 +454,11 @@ export function OpportunityDrawer({
               </section>
 
               {/* SECTION 6: PROGRESSIVE DISCLOSURE - TECHNICAL EVIDENCE & AUDIT */}
-              <section className="drawer-section-panel panel">
+              <section className="drawer-section">
                 <div className="drawer-section-head">
                   <div>
-                    <span className="section-step-tag">AUDIT & TECHNICAL EVIDENCE</span>
-                    <h3>Compliance & Traceability Ledger</h3>
+                    <span className="section-step-tag">Step 6 &bull; Audit &amp; Technical Telemetry</span>
+                    <h3>Compliance &amp; Traceability Ledger</h3>
                   </div>
                 </div>
 
@@ -474,7 +474,7 @@ export function OpportunityDrawer({
                         Object.entries(detail.policy_checks.checks).map(([ruleName, passed], i) => (
                           <div key={i} className={`control-check-item ${passed ? "pass" : "fail"}`}>
                             <span>{ruleName.replace(/_/g, " ")}</span>
-                            <strong className="check-mark">{passed ? "✓ PASS" : "✕ FAIL"}</strong>
+                            <strong className="check-mark">{passed ? "✓ Passed" : "✕ Failed"}</strong>
                           </div>
                         ))
                       ) : (
@@ -489,7 +489,7 @@ export function OpportunityDrawer({
                         ].map((rule, idx) => (
                           <div key={idx} className="control-check-item pass">
                             <span>{rule}</span>
-                            <strong className="check-mark">✓ PASS</strong>
+                            <strong className="check-mark">✓ Passed</strong>
                           </div>
                         ))
                       )}
@@ -507,31 +507,31 @@ export function OpportunityDrawer({
                     <div className="details-content-box">
                       <div className="link-grid">
                         <div>
-                          <span className="link-field-label">PAYMENT LINK ID</span>
+                          <span className="link-field-label">Payment Link ID</span>
                           <code className="link-field-code">{paymentLink.payment_link_id}</code>
                         </div>
                         <div>
-                          <span className="link-field-label">REFERENCE ID</span>
+                          <span className="link-field-label">Reference ID</span>
                           <code className="link-field-code">{paymentLink.payment_link_reference_id}</code>
                         </div>
                         <div>
-                          <span className="link-field-label">SHORT URL</span>
+                          <span className="link-field-label">Short URL</span>
                           {paymentLink.short_url ? (
                             <a
                               href={paymentLink.short_url}
                               target="_blank"
-                              rel="noopener noreferrer"
-                              className="link-field-code text-primary"
+                              rel="noreferrer"
+                              className="link-field-url"
                             >
-                              {paymentLink.short_url} &nearr;
+                              {paymentLink.short_url} ↗
                             </a>
                           ) : (
-                            <span className="link-field-code text-muted">Generated on dispatch</span>
+                            <span className="link-field-muted">N/A</span>
                           )}
                         </div>
                         <div>
-                          <span className="link-field-label">LINK STATUS</span>
-                          <Badge text={paymentLink.status} tone={paymentLink.status === "PAID" ? "good" : "warn"} size="sm" />
+                          <span className="link-field-label">Status</span>
+                          <Badge text={paymentLink.status || "Created"} tone="good" size="sm" />
                         </div>
                       </div>
                     </div>

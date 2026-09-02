@@ -35,7 +35,7 @@ export function ExecutiveKpiGrid({ summary, onNavigateTab }: ExecutiveKpiGridPro
         value={formatMinorCurrency(summary.gross_recovered_minor)}
         highlightTone="good"
         isHero
-        badge={{ text: "REALIZED", tone: "good" }}
+        badge={{ text: "Realized", tone: "good" }}
         subtext={`+${formatPercentage(summary.recovery_rate, true)} net capital yield captured`}
         onClick={() => onNavigateTab("Opportunities", { status: "RESOLVED" })}
         tooltip="Click to view settled Razorpay recoveries"

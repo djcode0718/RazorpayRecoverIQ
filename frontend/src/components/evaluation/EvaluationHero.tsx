@@ -27,10 +27,10 @@ export function EvaluationHero({ comparison, totalRuns }: EvaluationHeroProps) {
       <div className="eval-hero-details">
         <div className="eval-hero-title-row">
           <div>
-            <span className="section-step-tag">STATISTICAL VALIDATION &bull; HOLDOUT TEST SUITE</span>
-            <h2 className="eval-hero-heading">Model Performance & Recovery Intelligence Validation</h2>
+            <span className="section-step-tag">Statistical Validation &bull; Holdout Test Suite</span>
+            <h2 className="eval-hero-heading">Model Performance &amp; Recovery Intelligence Validation</h2>
           </div>
-          <Badge text="STATISTICALLY SUPERIOR" tone="good" size="sm" />
+          <Badge text="Statistically Superior" tone="good" size="sm" />
         </div>
 
         <p className="eval-hero-subtitle">
@@ -41,26 +41,26 @@ export function EvaluationHero({ comparison, totalRuns }: EvaluationHeroProps) {
 
         <div className="eval-hero-chips">
           <div className="eval-hero-chip">
-            <span className="chip-lbl">F1 DELTA:</span>
+            <span className="chip-lbl">F1 Delta:</span>
             <strong className="chip-val text-good">
               {f1Delta >= 0 ? "+" : ""}{formatPercentage(f1Delta)}
             </strong>
           </div>
           <div className="eval-hero-chip">
-            <span className="chip-lbl">DATASET SPLIT:</span>
+            <span className="chip-lbl">Dataset Split:</span>
             <strong className="chip-val">{metadata?.split ?? "TEST"} ({metadata?.total_cases ?? recoveriq.records} cases)</strong>
           </div>
           <div className="eval-hero-chip">
-            <span className="chip-lbl">DATASET VERSION:</span>
+            <span className="chip-lbl">Dataset Version:</span>
             <strong className="chip-val font-mono">{metadata?.dataset_version ?? "default_dataset"}</strong>
           </div>
           <div className="eval-hero-chip">
-            <span className="chip-lbl">TOTAL BENCHMARKS:</span>
+            <span className="chip-lbl">Total Benchmarks:</span>
             <strong className="chip-val">{totalRuns} runs recorded</strong>
           </div>
           {metadata?.timestamp && (
             <div className="eval-hero-chip">
-              <span className="chip-lbl">LAST RUN:</span>
+              <span className="chip-lbl">Last Run:</span>
               <strong className="chip-val">{formatIsoTimestamp(metadata.timestamp)}</strong>
             </div>
           )}

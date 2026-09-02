@@ -13,13 +13,13 @@ export function ReliabilityHero({ operatingStatus }: ReliabilityHeroProps) {
     <div className="panel reliability-hero-panel">
       <div className="panel-header-with-badge">
         <div>
-          <span className="section-step-tag">ENTERPRISE TRUST ARCHITECTURE</span>
-          <h2>Platform Reliability & Cryptographic Security</h2>
+          <span className="section-step-tag">Enterprise Trust Architecture</span>
+          <h2>Platform Reliability &amp; Cryptographic Security</h2>
           <p className="panel-copy">
             Evidence-driven validation demonstrating HMAC-SHA256 signature verification, event idempotency, fail-safe heuristics, and deterministic policy guardrails.
           </p>
         </div>
-        <Badge text="ENTERPRISE SECURITY POSTURE" tone="good" size="sm" />
+        <Badge text="Enterprise Security Posture" tone="good" size="sm" />
       </div>
 
       {/* 4 Trust Summary Cards */}
@@ -27,7 +27,7 @@ export function ReliabilityHero({ operatingStatus }: ReliabilityHeroProps) {
         <div className="trust-card">
           <div className="trust-head">
             <span className="trust-icon">⚡</span>
-            <span className="trust-lbl">RELIABILITY</span>
+            <span className="trust-lbl">Reliability</span>
           </div>
           <strong className="trust-val">Fail-Safe Active</strong>
           <span className="trust-sub">Autonomous heuristic fallback on API timeout</span>
@@ -36,7 +36,7 @@ export function ReliabilityHero({ operatingStatus }: ReliabilityHeroProps) {
         <div className="trust-card">
           <div className="trust-head">
             <span className="trust-icon">🔒</span>
-            <span className="trust-lbl">SECURITY</span>
+            <span className="trust-lbl">Security</span>
           </div>
           <strong className="trust-val text-good">
             {isHmacActive ? "HMAC-SHA256" : "Signature Enforced"}
@@ -47,7 +47,7 @@ export function ReliabilityHero({ operatingStatus }: ReliabilityHeroProps) {
         <div className="trust-card">
           <div className="trust-head">
             <span className="trust-icon">🛡️</span>
-            <span className="trust-lbl">DATA INTEGRITY</span>
+            <span className="trust-lbl">Data Integrity</span>
           </div>
           <strong className="trust-val text-primary">Idempotency Ledger</strong>
           <span className="trust-sub">Zero-state duplicate webhook deduplication</span>
@@ -56,7 +56,7 @@ export function ReliabilityHero({ operatingStatus }: ReliabilityHeroProps) {
         <div className="trust-card">
           <div className="trust-head">
             <span className="trust-icon">📜</span>
-            <span className="trust-lbl">AUDITABILITY</span>
+            <span className="trust-lbl">Auditability</span>
           </div>
           <strong className="trust-val">
             {isPolicyActive ? "7/7 Policy Gates" : "Deterministic Rules"}

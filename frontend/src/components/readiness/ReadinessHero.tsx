@@ -17,10 +17,10 @@ export function ReadinessHero({ data, isRunning, onExecuteValidation }: Readines
   const isBlocked = failCount > 0 || data.status === "FAIL" || data.status === "BLOCKED";
 
   const releaseRecommendation = isReady
-    ? "READY FOR CONTROLLED PILOT"
+    ? "Ready for Controlled Pilot"
     : isBlocked
-    ? "RELEASE BLOCKED — RESOLVE GATES"
-    : "READY WITH CONDITIONS";
+    ? "Release Blocked — Resolve Gates"
+    : "Ready with Conditions";
 
   const recommendationTone = isReady ? "good" : isBlocked ? "bad" : "warn";
 
@@ -36,7 +36,7 @@ export function ReadinessHero({ data, isRunning, onExecuteValidation }: Readines
         <div className="score-summary-area">
           <div className="overall-status-badge-row">
             <div>
-              <span className="section-step-tag">CONTINUOUS RELEASE AUDIT</span>
+              <span className="section-step-tag">Continuous Release Audit</span>
               <h2 className="readiness-main-title">Production Readiness Assessment</h2>
             </div>
             <Badge text={releaseRecommendation} tone={recommendationTone} size="md" />

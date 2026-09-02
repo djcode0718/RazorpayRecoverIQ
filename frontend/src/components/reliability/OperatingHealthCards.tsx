@@ -30,7 +30,7 @@ export function OperatingHealthCards({ operatingStatus }: OperatingHealthCardsPr
           <div className="health-card-top">
             <span className="health-card-icon">💳</span>
             <Badge
-              text={isGatewayConnected ? "CONNECTED" : "DISCONNECTED"}
+              text={isGatewayConnected ? "Connected" : "Disconnected"}
               tone={isGatewayConnected ? "good" : "bad"}
               size="sm"
             />
@@ -38,7 +38,7 @@ export function OperatingHealthCards({ operatingStatus }: OperatingHealthCardsPr
           <div className="health-card-body">
             <strong className="health-card-title">Payment Gateway</strong>
             <span className="health-card-env">
-              {operatingStatus?.payment_environment || "RAZORPAY TEST MODE"}
+              {operatingStatus?.payment_environment || "Razorpay Test Mode"}
             </span>
             <p className="health-card-detail">
               API connectivity verified with active merchant credentials and rate-limit guardrails.
@@ -51,14 +51,14 @@ export function OperatingHealthCards({ operatingStatus }: OperatingHealthCardsPr
           <div className="health-card-top">
             <span className="health-card-icon">🔗</span>
             <Badge
-              text={isWebhookActive ? "VERIFIED" : "WAITING"}
+              text={isWebhookActive ? "Verified" : "Waiting"}
               tone={isWebhookActive ? "good" : "warn"}
               size="sm"
             />
           </div>
           <div className="health-card-body">
             <strong className="health-card-title">Webhook Gateway</strong>
-            <span className="health-card-env">HMAC-SHA256 AUTHENTICATED</span>
+            <span className="health-card-env">HMAC-SHA256 Authenticated</span>
             <p className="health-card-detail">
               {operatingStatus?.last_event
                 ? `Last event: ${operatingStatus.last_event}`
@@ -72,14 +72,14 @@ export function OperatingHealthCards({ operatingStatus }: OperatingHealthCardsPr
           <div className="health-card-top">
             <span className="health-card-icon">🧠</span>
             <Badge
-              text={operatingStatus?.ai_provider || "ACTIVE"}
+              text={operatingStatus?.ai_provider === "UNAVAILABLE" ? "Offline" : "Active"}
               tone={isAiActive ? "good" : "warn"}
               size="sm"
             />
           </div>
           <div className="health-card-body">
             <strong className="health-card-title">AI Intelligence</strong>
-            <span className="health-card-env">AUTONOMOUS ML ENGINE</span>
+            <span className="health-card-env">Autonomous ML Engine</span>
             <p className="health-card-detail">
               {operatingStatus?.ai_provider_note || "Local heuristic fallback armed for 100% failover resilience."}
             </p>
@@ -91,14 +91,14 @@ export function OperatingHealthCards({ operatingStatus }: OperatingHealthCardsPr
           <div className="health-card-top">
             <span className="health-card-icon">🛡️</span>
             <Badge
-              text={isPolicyActive ? "ACTIVE" : "DEGRADED"}
+              text={isPolicyActive ? "Active" : "Degraded"}
               tone={isPolicyActive ? "good" : "bad"}
               size="sm"
             />
           </div>
           <div className="health-card-body">
             <strong className="health-card-title">Policy Safety Engine</strong>
-            <span className="health-card-env">7/7 DETERMINISTIC CHECKS</span>
+            <span className="health-card-env">7/7 Deterministic Checks</span>
             <p className="health-card-detail">
               {operatingStatus?.policy_engine_note || "Strict velocity, risk limits, and idempotency checks enforced."}
             </p>

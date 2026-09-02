@@ -16,7 +16,7 @@ export function ActionableInsights({ summary, operatingStatus }: ActionableInsig
       <article className="insight-card-structured panel">
         <div className="insight-card-top">
           <div className="insight-title-group">
-            <span className="insight-tag">1. RECENT ACTIVITY</span>
+            <span className="insight-tag">1. Recent Activity</span>
             <h3>What Changed</h3>
           </div>
           <Badge text={`${summary.recovery_attempts} Attempted`} tone="info" size="sm" />
@@ -39,7 +39,7 @@ export function ActionableInsights({ summary, operatingStatus }: ActionableInsig
           </div>
           <div className="insight-row action-row">
             <span className="row-q">What to do:</span>
-            <p className="row-a text-good font-bold">
+            <p className="row-a text-good">
               Review prioritized recovery queue below to dispatch high-conviction actions.
             </p>
           </div>
@@ -50,7 +50,7 @@ export function ActionableInsights({ summary, operatingStatus }: ActionableInsig
       <article className="insight-card-structured panel">
         <div className="insight-card-top">
           <div className="insight-title-group">
-            <span className="insight-tag">2. CAPITAL EXPOSURE</span>
+            <span className="insight-tag">2. Capital Exposure</span>
             <h3>Where Money Is At Risk</h3>
           </div>
           <Badge text={`${formatMinorCurrency(summary.revenue_at_risk_minor)} Exposure`} tone="warn" size="sm" />
@@ -71,7 +71,7 @@ export function ActionableInsights({ summary, operatingStatus }: ActionableInsig
           </div>
           <div className="insight-row action-row">
             <span className="row-q">What to do:</span>
-            <p className="row-a text-primary font-bold">
+            <p className="row-a text-primary">
               Deploy Razorpay Smart Payment Links with pre-warmed UPI & alternate card checkout.
             </p>
           </div>
@@ -82,7 +82,7 @@ export function ActionableInsights({ summary, operatingStatus }: ActionableInsig
       <article className="insight-card-structured panel">
         <div className="insight-card-top">
           <div className="insight-title-group">
-            <span className="insight-tag">3. POLICY & GOVERNANCE</span>
+            <span className="insight-tag">3. Policy &amp; Governance</span>
             <h3>Manager Attention</h3>
           </div>
           <Badge

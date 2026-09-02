@@ -622,15 +622,18 @@ export function App() {
 
             {/* TAB 2: OPPORTUNITIES */}
             {activeTab === "Opportunities" && (
-              <div className="opportunities-tab-layout panel">
-                <div className="panel-header-with-badge">
-                  <div>
-                    <h2>Revenue Recovery Opportunities</h2>
-                    <p className="panel-copy">
-                      All failed payment exposure ranked for automated action with deterministic safety policy and outcome context.
-                    </p>
+              <div className="opportunities-tab-layout">
+                <div className="panel opportunities-header-panel">
+                  <div className="panel-header-with-badge">
+                    <div>
+                      <span className="section-step-tag">OPERATIONAL RECOVERY LEDGER</span>
+                      <h2>Revenue Recovery Opportunities</h2>
+                      <p className="panel-copy">
+                        All failed payment exposure ranked for automated action with deterministic safety policy and outcome context.
+                      </p>
+                    </div>
+                    <span className="badge badge-info badge-sm">Live Ingestion Ledger</span>
                   </div>
-                  <span className="badge badge-info badge-sm">Live Ingestion Ledger</span>
                 </div>
 
                 {/* Search & Filter Controls */}

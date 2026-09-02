@@ -61,18 +61,18 @@ function formatDiagnosticLabel(category?: string | null, reason?: string | null)
 
 function formatOutcomeLabel(outcome?: string | null, status?: string | null): { text: string; tone: "good" | "warn" | "bad" | "info" | "neutral" } {
   if (outcome === "RECOVERED" || status === "RESOLVED") {
-    return { text: "✓ RECOVERED", tone: "good" };
+    return { text: "✓ Recovered", tone: "good" };
   }
   if (outcome === "BLOCKED" || outcome === "POLICY_BLOCKED") {
-    return { text: "✕ BLOCKED", tone: "bad" };
+    return { text: "✕ Blocked", tone: "bad" };
   }
   if (outcome === "ESCALATED") {
-    return { text: "⚡ ESCALATED", tone: "warn" };
+    return { text: "⚡ Escalated", tone: "warn" };
   }
   if (outcome === "FAILED") {
-    return { text: "✕ NOT RECOVERED", tone: "bad" };
+    return { text: "✕ Not Recovered", tone: "bad" };
   }
-  return { text: "● PENDING ACTION", tone: "info" };
+  return { text: "● Pending Action", tone: "info" };
 }
 
 export function OpportunityTable({

@@ -124,7 +124,7 @@ export function ReadinessCheckGrid({ checks }: ReadinessCheckGridProps) {
             <div className="cat-card-header">
               <span className="cat-card-name">{stat.category}</span>
               <Badge
-                text={stat.status}
+                text={stat.status === "PASS" ? "Passed" : stat.status === "PARTIAL" ? "Partial" : "Blocked"}
                 tone={stat.status === "PASS" ? "good" : stat.status === "PARTIAL" ? "warn" : "bad"}
                 size="sm"
               />

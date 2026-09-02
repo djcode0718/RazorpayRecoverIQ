@@ -25,7 +25,7 @@ export function ExecutiveMetricsCards({ comparison, drilldown }: ExecutiveMetric
       {/* 1. Precision */}
       <div className="eval-kpi-card">
         <div className="eval-kpi-head">
-          <span className="eval-kpi-lbl">PRECISION</span>
+          <span className="eval-kpi-lbl">Precision</span>
           <span className="eval-kpi-chip">TP / (TP + FP)</span>
         </div>
         <strong className="eval-kpi-val text-good">{formatPercentage(recoveriq.precision)}</strong>
@@ -37,7 +37,7 @@ export function ExecutiveMetricsCards({ comparison, drilldown }: ExecutiveMetric
       {/* 2. Recall */}
       <div className="eval-kpi-card">
         <div className="eval-kpi-head">
-          <span className="eval-kpi-lbl">RECALL</span>
+          <span className="eval-kpi-lbl">Recall</span>
           <span className="eval-kpi-chip">TP / (TP + FN)</span>
         </div>
         <strong className="eval-kpi-val text-good">{formatPercentage(recoveriq.recall)}</strong>
@@ -49,7 +49,7 @@ export function ExecutiveMetricsCards({ comparison, drilldown }: ExecutiveMetric
       {/* 3. F1 Quality Score */}
       <div className="eval-kpi-card highlight-card">
         <div className="eval-kpi-head">
-          <span className="eval-kpi-lbl">F1 QUALITY SCORE</span>
+          <span className="eval-kpi-lbl">F1 Quality Score</span>
           <span className="eval-kpi-chip">Harmonic Mean</span>
         </div>
         <strong className="eval-kpi-val text-primary">{formatPercentage(recoveriq.f1)}</strong>
@@ -61,7 +61,7 @@ export function ExecutiveMetricsCards({ comparison, drilldown }: ExecutiveMetric
       {/* 4. Overall Recovery Accuracy */}
       <div className="eval-kpi-card">
         <div className="eval-kpi-head">
-          <span className="eval-kpi-lbl">CLASSIFICATION ACCURACY</span>
+          <span className="eval-kpi-lbl">Classification Accuracy</span>
           <span className="eval-kpi-chip">(TP + TN) / Total</span>
         </div>
         <strong className="eval-kpi-val">{formatPercentage(overallAccuracy)}</strong>
@@ -73,7 +73,7 @@ export function ExecutiveMetricsCards({ comparison, drilldown }: ExecutiveMetric
       {/* 5. Test Cases Passed */}
       <div className="eval-kpi-card">
         <div className="eval-kpi-head">
-          <span className="eval-kpi-lbl">TEST CASES PASSED</span>
+          <span className="eval-kpi-lbl">Test Cases Passed</span>
           <span className="badge badge-good badge-sm">✓ {Math.round((passedCases / total) * 100)}%</span>
         </div>
         <strong className="eval-kpi-val text-good">{passedCases}</strong>
@@ -85,7 +85,7 @@ export function ExecutiveMetricsCards({ comparison, drilldown }: ExecutiveMetric
       {/* 6. Test Cases Failed / Blocked */}
       <div className="eval-kpi-card">
         <div className="eval-kpi-head">
-          <span className="eval-kpi-lbl">CLASSIFICATION ERRORS</span>
+          <span className="eval-kpi-lbl">Classification Errors</span>
           <span className="badge badge-warn badge-sm">{failedCases} cases</span>
         </div>
         <strong className="eval-kpi-val text-warn">{failedCases}</strong>

@@ -13,7 +13,7 @@ export function ExecutiveStoryBanner({ summary, opportunities }: ExecutiveStoryB
   return (
     <section className="executive-story-compact-banner panel" aria-label="Recovery Lifecycle Loop">
       <div className="compact-loop-header">
-        <span className="compact-loop-tag">AUTONOMOUS RECOVERY LOOP</span>
+        <span className="compact-loop-tag">Autonomous Recovery Loop</span>
         <div className="compact-briefing-snippet">
           <span className="briefing-icon">💡</span>
           <strong className="briefing-label">Executive Briefing:</strong>

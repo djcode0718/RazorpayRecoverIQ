@@ -80,12 +80,12 @@ export function PriorityQueue({ opportunities, onSelectOpportunity, onViewAll }:
                   </div>
                   <div className="priority-tags">
                     <Badge
-                      text={item.urgencyLevel === "HIGH" ? "⚡ URGENT" : "STANDARD"}
+                      text={item.urgencyLevel === "HIGH" ? "⚡ Urgent" : "Standard"}
                       tone={item.urgencyLevel === "HIGH" ? "warn" : "neutral"}
                       size="sm"
                     />
                     <Badge
-                      text={`${item.priorityScore} PTS`}
+                      text={`${item.priorityScore} Pts`}
                       tone={item.priorityScore >= 80 ? "good" : "info"}
                       size="sm"
                     />
