@@ -25,6 +25,8 @@ class Settings(BaseSettings):
     gemini_api_key: str = ""
     gemini_model: str = "gemini-3.6-flash"
     payment_adapter_mode: str = "simulation"
+    demo_payment_link_override: str = "off"
+    demo_payment_link_url: str = "https://razorpay.com/payment-link/plink_TWqxj6SdmOX88j/test"
     internal_webhook_replay_enabled: bool = True
     log_level: str = "DEBUG"
     log_sql_queries: bool = True

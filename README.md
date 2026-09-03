@@ -402,8 +402,7 @@ RazorpayRecoverIQ/
 │   │   │   └── providers.py           # Mock & Ollama LLM provider implementations
 │   │   └── api/
 │   │       └── routes.py              # REST API route definitions
-│   ├── tests/                         # Pytest test suite
-│   └── requirements.txt               # Backend Python dependencies
+│   └── tests/                         # Pytest test suite
 ├── frontend/
 │   ├── src/
 │   │   ├── App.tsx                    # Main layout orchestrator & tab routing
@@ -465,7 +464,7 @@ python3 -m venv .venv
 source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 
 # Install Python dependencies
-pip install -r backend/requirements.txt
+pip install -r requirements.txt
 
 # Configure environment variables
 cp .env.example .env

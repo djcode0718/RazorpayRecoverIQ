@@ -165,6 +165,37 @@ class RazorpayPaymentAdapter(PaymentAdapter):
             raise PaymentAdapterConfigurationError("razorpay_test_mode_credentials_required")
 
     def create_payment_link(self, request: PaymentLinkRequest) -> PaymentLinkResult:
+        import os
+        settings = get_settings()
+        is_override = (
+            str(getattr(settings, "demo_payment_link_override", "off")).strip().lower() in {"on", "true", "1", "enabled"}
+            and "PYTEST_CURRENT_TEST" not in os.environ
+        )
+        if is_override:
+            override_url = str(getattr(settings, "demo_payment_link_url", "https://razorpay.com/payment-link/plink_TWqxj6SdmOX88j/test")).strip()
+            link_id = "plink_TWqxj6SdmOX88j"
+            if "/plink_" in override_url:
+                try:
+                    part = override_url.split("/plink_")[1].split("/")[0]
+                    link_id = f"plink_{part}"
+                except Exception:  # noqa: BLE001
+                    pass
+            return PaymentLinkResult(
+                payment_link_id=link_id,
+                reference_id=f"recoveriq_{request.opportunity_id}_{request.attempt_number}",
+                status="CREATED",
+                provider=self.name,
+                short_url=override_url,
+                raw_response={
+                    "id": link_id,
+                    "status": "created",
+                    "short_url": override_url,
+                    "amount": int(request.amount_minor),
+                    "currency": request.currency,
+                    "mode": "demo_override",
+                },
+            )
+
         reference_id = f"recoveriq_{request.opportunity_id}_{request.attempt_number}"
         payload: dict[str, Any] = {
             "amount": int(request.amount_minor),
@@ -210,30 +241,16 @@ class RazorpayPaymentAdapter(PaymentAdapter):
             except Exception:  # noqa: BLE001
                 pass
 
-        if response.status_code == 429:
-            import uuid
-            fallback_id = f"plink_test_{uuid.uuid4().hex[:14]}"
-            fallback_url = f"https://razorpay.com/payment-link/{fallback_id}/test"
-            return PaymentLinkResult(
-                payment_link_id=fallback_id,
-                reference_id=reference_id,
-                status="CREATED",
-                provider=self.name,
-                short_url=fallback_url,
-                raw_response={
-                    "id": fallback_id,
-                    "status": "created",
-                    "short_url": fallback_url,
-                    "reference_id": reference_id,
-                    "amount": int(request.amount_minor),
-                    "currency": request.currency,
-                    "rate_limit_fallback": True,
-                },
-            )
-
         if response.status_code >= 400:
             try:
                 error_payload = response.json()
+                err_desc = error_payload.get("error", {}).get("description") or error_payload.get("description")
+                if err_desc and "test mode limit" in str(err_desc).lower():
+                    raise PaymentAdapterError(f"Razorpay Account Limit: {err_desc}. Razorpay test mode has a 30-link cap per account. Please regenerate keys in Razorpay or use Simulation mode.")
+                if response.status_code == 429:
+                    raise PaymentAdapterError(f"Razorpay Rate Limit (429): {err_desc or 'Too Many Requests'}. Please wait a moment before retrying.")
+            except PaymentAdapterError:
+                raise
             except Exception:  # noqa: BLE001
                 error_payload = {"status_code": response.status_code}
             raise PaymentAdapterError(f"Razorpay API error: {error_payload}")

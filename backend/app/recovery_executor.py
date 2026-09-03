@@ -73,11 +73,13 @@ def execute_recovery_attempt(
         raise ValueError("invalid_recovery_state_transition")
 
     open_attempt = db.execute(
-        select(RecoveryAttempt).where(
+        select(RecoveryAttempt)
+        .where(
             RecoveryAttempt.opportunity_id == opportunity_id,
             RecoveryAttempt.status.in_({"REQUESTED", "EXECUTED", "PENDING_VERIFICATION"}),
         )
-    ).scalar_one_or_none()
+        .order_by(RecoveryAttempt.attempt_number.desc(), RecoveryAttempt.id.desc())
+    ).scalars().first()
     if open_attempt is not None:
         existing_link = db.execute(
             select(RecoveryPaymentLink).where(RecoveryPaymentLink.recovery_attempt_id == open_attempt.id)
