@@ -46,6 +46,23 @@ def test_mock_provider_output_passes_strict_schema_validation() -> None:
     assert validated.recovery_probability >= 0
 
 
+def test_registry_resolves_groq_and_gemini_providers(tmp_path: Path) -> None:
+    os.environ["RECOVERIQ_DB_URL"] = f"sqlite:///{tmp_path / 'test_provider_cloud.db'}"
+    os.environ["AI_PROVIDER"] = "groq"
+    os.environ["GROQ_API_KEY"] = "gsk_test_mock_key"
+    get_settings.cache_clear()
+
+    groq_provider = get_provider()
+    assert groq_provider.name == "groq"
+
+    os.environ["AI_PROVIDER"] = "gemini"
+    os.environ["GEMINI_API_KEY"] = "AQ_test_mock_key"
+    get_settings.cache_clear()
+
+    gemini_provider = get_provider()
+    assert gemini_provider.name == "gemini"
+
+
 def test_registry_rejects_unknown_provider() -> None:
     with pytest.raises(ValueError):
         get_provider("does-not-exist")

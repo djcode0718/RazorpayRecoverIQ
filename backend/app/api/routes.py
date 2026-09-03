@@ -451,6 +451,20 @@ def get_truthful_operating_status(db: Session, settings: Settings) -> dict[str, 
     if ai_provider_config == "mock":
         ai_provider_status = "MOCK/FALLBACK"
         ai_provider_note = "Deterministic mock provider active"
+    elif ai_provider_config == "groq":
+        if settings.groq_api_key:
+            ai_provider_status = "CLOUD"
+            ai_provider_note = f"Groq active ({settings.groq_model})"
+        else:
+            ai_provider_status = "MOCK/FALLBACK"
+            ai_provider_note = "Groq key missing, fallback enabled"
+    elif ai_provider_config == "gemini":
+        if settings.gemini_api_key:
+            ai_provider_status = "CLOUD"
+            ai_provider_note = f"Gemini active ({settings.gemini_model})"
+        else:
+            ai_provider_status = "MOCK/FALLBACK"
+            ai_provider_note = "Gemini key missing, fallback enabled"
     elif ai_provider_config in {"ollama", "local"}:
         try:
             resp = httpx.get("http://127.0.0.1:11434/api/tags", timeout=0.8)
@@ -463,7 +477,7 @@ def get_truthful_operating_status(db: Session, settings: Settings) -> dict[str, 
         except Exception:
             ai_provider_status = "MOCK/FALLBACK"
             ai_provider_note = "Ollama unreachable, fallback enabled"
-    elif ai_provider_config in {"openai", "gemini", "anthropic", "external"}:
+    elif ai_provider_config in {"openai", "anthropic", "external"}:
         ai_provider_status = "EXTERNAL"
         ai_provider_note = f"External AI provider ({ai_provider_config})"
     else:
@@ -1430,7 +1444,7 @@ def get_opportunity_detail(opportunity_id: int, db: Session = Depends(get_db), s
             "execution_status": execution_status,
             "verification_status": verification_status,
             "outcome": outcome,
-            "execution_mode": settings.payment_adapter_mode,
+            "execution_mode": settings.payment_adapter_mode if isinstance(settings, Settings) else get_settings().payment_adapter_mode,
         },
         "semantic_states": semantic_states,
         "recovery_state": recovery_state,
@@ -1687,6 +1701,10 @@ def execute_opportunity(
                     "status": payment_link.status,
                     "amount_minor": payment_link.amount_minor,
                     "currency": payment_link.currency,
+                    "short_url": (
+                        (json.loads(payment_link.external_response_reference).get("short_url") if payment_link.external_response_reference else None)
+                        or (f"https://razorpay.com/payment-link/{payment_link.payment_link_id}/test" if payment_link.payment_link_id else None)
+                    ),
                 }
                 if payment_link is not None
                 else None

@@ -20,6 +20,10 @@ class Settings(BaseSettings):
 
     ai_provider: str = "mock"
     ollama_model: str = "llama3.2:3b"
+    groq_api_key: str = ""
+    groq_model: str = "openai/gpt-oss-20b"
+    gemini_api_key: str = ""
+    gemini_model: str = "gemini-3.6-flash"
     payment_adapter_mode: str = "simulation"
     internal_webhook_replay_enabled: bool = True
     log_level: str = "DEBUG"

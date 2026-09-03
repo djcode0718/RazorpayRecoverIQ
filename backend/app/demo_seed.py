@@ -126,207 +126,220 @@ SYNTHETIC_CUSTOMERS_SPEC = [
 
 
 def seed_core_recovery_demo(db: Session) -> dict[str, Any]:
-    settings = get_settings()
-    secret = settings.razorpay_webhook_secret
-    if not secret:
-        raise ValueError("RAZORPAY_WEBHOOK_SECRET is required for deterministic demo seeding")
+    from .ai.providers import MockDiagnosisProvider
+    from .gateway_adapters import SimulationPaymentAdapter
+    from . import recovery_intelligence, recovery_executor
 
-    reset_core_recovery_data(db)
+    orig_get_provider = recovery_intelligence.get_provider
+    orig_get_adapter = recovery_executor.get_payment_adapter
+    recovery_intelligence.get_provider = lambda *args, **kwargs: MockDiagnosisProvider()
+    recovery_executor.get_payment_adapter = lambda *args, **kwargs: SimulationPaymentAdapter()
 
-    # 1. Seed Synthetic Merchant
-    merchant = Merchant(
-        name="[TEST] Synthetix SaaS Platform",
-        environment="simulation",
-        razorpay_account_id="acc_demo_seed",
-    )
-    db.add(merchant)
-    db.commit()
+    try:
+        settings = get_settings()
+        secret = settings.razorpay_webhook_secret
+        if not secret:
+            raise ValueError("RAZORPAY_WEBHOOK_SECRET is required for deterministic demo seeding")
 
-    # 2. Seed Synthetic Customers
-    created_customers: list[Customer] = []
-    for idx, spec in enumerate(SYNTHETIC_CUSTOMERS_SPEC, start=1):
-        cust = Customer(
-            external_customer_id=f"CUST-SYNTH-{idx:04d}",
-            name=spec["name"],
-            email=spec["email"],
-            phone=spec["phone"],
-            segment=spec["segment"],
-            total_payment_attempts=spec["attempts"],
-            successful_payment_count=spec["success"],
-            failed_payment_count=spec["failed"],
-            total_success_value=spec["success"] * 250000,
-            average_payment_value=250000,
-            historical_recovery_count=spec["rec_count"],
-            historical_recovery_rate=spec["rec_rate"],
+        reset_core_recovery_data(db)
+
+        # 1. Seed Synthetic Merchant
+        merchant = Merchant(
+            name="[TEST] Synthetix SaaS Platform",
+            environment="simulation",
+            razorpay_account_id="acc_demo_seed",
         )
-        db.add(cust)
-        created_customers.append(cust)
-    db.commit()
-    for cust in created_customers:
-        db.refresh(cust)
-
-    base_time = int((datetime.now(UTC) - timedelta(days=5)).timestamp())
-    failed_cases = [
-        ("evt_demo_001", "pay_demo_001", "order_demo_001", 240000, "network", "card"),
-        ("evt_demo_002", "pay_demo_002", "order_demo_002", 310000, "issuer_declined", "card"),
-        ("evt_demo_003", "pay_demo_003", "order_demo_003", 1200000, "network", "card"),
-        ("evt_demo_004", "pay_demo_004", "order_demo_004", 980000, "unknown_reason", None),
-        ("evt_demo_005", "pay_demo_005", "order_demo_005", 160000, "3ds_failed", "upi"),
-        ("evt_demo_006", "pay_demo_006", "order_demo_006", 275000, "network", "card"),
-        ("evt_demo_007", "pay_demo_007", "order_demo_007", 810000, "network", "card"),
-        ("evt_demo_008", "pay_demo_008", "order_demo_008", 220000, "insufficient_funds", "card"),
-        ("evt_demo_009", "pay_demo_009", "order_demo_009", 199000, "network", "netbanking"),
-        ("evt_demo_010", "pay_demo_010", "order_demo_010", 490000, "issuer_declined", "card"),
-        ("evt_demo_011", "pay_demo_011", "order_demo_011", 360000, "network", "card"),
-        ("evt_demo_012", "pay_demo_012", "order_demo_012", 140000, "network", "card"),
-    ]
-
-    # 3. Seed Synthetic Orders and Ingest Webhook Events
-    webhook_results: list[dict[str, Any]] = []
-    for index, (event_id, payment_id, order_id, amount, reason, method) in enumerate(failed_cases):
-        cust = created_customers[index % len(created_customers)]
-        order = Order(
-            razorpay_order_id=order_id,
-            customer_id=cust.id,
-            amount_minor=amount,
-            currency="INR",
-            status="attempted",
-            attempts=1,
-            raw_reference=f"[TEST] Order for {cust.name}",
-        )
-        db.add(order)
+        db.add(merchant)
         db.commit()
 
+        # 2. Seed Synthetic Customers
+        created_customers: list[Customer] = []
+        for idx, spec in enumerate(SYNTHETIC_CUSTOMERS_SPEC, start=1):
+            cust = Customer(
+                external_customer_id=f"CUST-SYNTH-{idx:04d}",
+                name=spec["name"],
+                email=spec["email"],
+                phone=spec["phone"],
+                segment=spec["segment"],
+                total_payment_attempts=spec["attempts"],
+                successful_payment_count=spec["success"],
+                failed_payment_count=spec["failed"],
+                total_success_value=spec["success"] * 250000,
+                average_payment_value=250000,
+                historical_recovery_count=spec["rec_count"],
+                historical_recovery_rate=spec["rec_rate"],
+            )
+            db.add(cust)
+            created_customers.append(cust)
+        db.commit()
+        for cust in created_customers:
+            db.refresh(cust)
+
+        base_time = int((datetime.now(UTC) - timedelta(days=5)).timestamp())
+        failed_cases = [
+            ("evt_demo_001", "pay_demo_001", "order_demo_001", 240000, "network", "card"),
+            ("evt_demo_002", "pay_demo_002", "order_demo_002", 310000, "issuer_declined", "card"),
+            ("evt_demo_003", "pay_demo_003", "order_demo_003", 1200000, "network", "card"),
+            ("evt_demo_004", "pay_demo_004", "order_demo_004", 980000, "unknown_reason", None),
+            ("evt_demo_005", "pay_demo_005", "order_demo_005", 160000, "3ds_failed", "upi"),
+            ("evt_demo_006", "pay_demo_006", "order_demo_006", 275000, "network", "card"),
+            ("evt_demo_007", "pay_demo_007", "order_demo_007", 810000, "network", "card"),
+            ("evt_demo_008", "pay_demo_008", "order_demo_008", 220000, "insufficient_funds", "card"),
+            ("evt_demo_009", "pay_demo_009", "order_demo_009", 199000, "network", "netbanking"),
+            ("evt_demo_010", "pay_demo_010", "order_demo_010", 490000, "issuer_declined", "card"),
+            ("evt_demo_011", "pay_demo_011", "order_demo_011", 360000, "network", "card"),
+            ("evt_demo_012", "pay_demo_012", "order_demo_012", 140000, "network", "card"),
+        ]
+
+        # 3. Seed Synthetic Orders and Ingest Webhook Events
+        webhook_results: list[dict[str, Any]] = []
+        for index, (event_id, payment_id, order_id, amount, reason, method) in enumerate(failed_cases):
+            cust = created_customers[index % len(created_customers)]
+            order = Order(
+                razorpay_order_id=order_id,
+                customer_id=cust.id,
+                amount_minor=amount,
+                currency="INR",
+                status="attempted",
+                attempts=1,
+                raw_reference=f"[TEST] Order for {cust.name}",
+            )
+            db.add(order)
+            db.commit()
+
+            webhook_results.append(
+                _post_payload(
+                    db,
+                    _failed_payload(
+                        event_id=event_id,
+                        payment_id=payment_id,
+                        order_id=order_id,
+                        created_at=base_time + (index * 36000),
+                        amount_minor=amount,
+                        reason=reason,
+                        method=method,
+                    ),
+                    secret,
+                )
+            )
+
+            # Link synthetic customer to payment and opportunity
+            pay_rec = db.execute(select(Payment).where(Payment.razorpay_payment_id == payment_id)).scalar_one_or_none()
+            if pay_rec is not None:
+                pay_rec.customer_id = cust.id
+                db.commit()
+
+                opp_rec = db.execute(select(RevenueOpportunity).where(RevenueOpportunity.payment_id == pay_rec.id)).scalar_one_or_none()
+                if opp_rec is not None:
+                    opp_rec.customer_id = cust.id
+                    opp_rec.order_id = order.id
+                    db.commit()
+
+        # Duplicate event scenario: replay exact event id and payload.
         webhook_results.append(
             _post_payload(
                 db,
                 _failed_payload(
-                    event_id=event_id,
-                    payment_id=payment_id,
-                    order_id=order_id,
-                    created_at=base_time + (index * 36000),
-                    amount_minor=amount,
-                    reason=reason,
-                    method=method,
+                    event_id="evt_demo_012",
+                    payment_id="pay_demo_012",
+                    order_id="order_demo_012",
+                    created_at=base_time + (11 * 36000) + 120,
+                    amount_minor=140000,
+                    reason="network",
+                    method="card",
                 ),
                 secret,
             )
         )
 
-        # Link synthetic customer to payment and opportunity
-        pay_rec = db.execute(select(Payment).where(Payment.razorpay_payment_id == payment_id)).scalar_one_or_none()
-        if pay_rec is not None:
-            pay_rec.customer_id = cust.id
-            db.commit()
-
-            opp_rec = db.execute(select(RevenueOpportunity).where(RevenueOpportunity.payment_id == pay_rec.id)).scalar_one_or_none()
-            if opp_rec is not None:
-                opp_rec.customer_id = cust.id
-                opp_rec.order_id = order.id
-                db.commit()
-
-    # Duplicate event scenario: replay exact event id and payload.
-    webhook_results.append(
-        _post_payload(
-            db,
-            _failed_payload(
-                event_id="evt_demo_012",
-                payment_id="pay_demo_012",
-                order_id="order_demo_012",
-                created_at=base_time + (11 * 36000) + 120,
-                amount_minor=140000,
-                reason="network",
-                method="card",
-            ),
-            secret,
+        # Successful recovery scenarios.
+        webhook_results.append(
+            _post_payload(
+                db,
+                _captured_payload(
+                    event_id="evt_demo_cap_001",
+                    payment_id="pay_demo_001",
+                    order_id="order_demo_001",
+                    created_at=base_time + 7200,
+                    amount_minor=240000,
+                ),
+                secret,
+            )
         )
-    )
-
-    # Successful recovery scenarios.
-    webhook_results.append(
-        _post_payload(
-            db,
-            _captured_payload(
-                event_id="evt_demo_cap_001",
-                payment_id="pay_demo_001",
-                order_id="order_demo_001",
-                created_at=base_time + 7200,
-                amount_minor=240000,
-            ),
-            secret,
+        webhook_results.append(
+            _post_payload(
+                db,
+                _captured_payload(
+                    event_id="evt_demo_cap_002",
+                    payment_id="pay_demo_002",
+                    order_id="order_demo_002",
+                    created_at=base_time + 36000 + 7200,
+                    amount_minor=310000,
+                ),
+                secret,
+            )
         )
-    )
-    webhook_results.append(
-        _post_payload(
-            db,
-            _captured_payload(
-                event_id="evt_demo_cap_002",
-                payment_id="pay_demo_002",
-                order_id="order_demo_002",
-                created_at=base_time + 36000 + 7200,
-                amount_minor=310000,
-            ),
-            secret,
-        )
-    )
 
-    # Failed recovery scenario: verify with payment still failed.
-    failed_payment = db.execute(
-        select(Payment).where(Payment.razorpay_payment_id == "pay_demo_005")
-    ).scalar_one_or_none()
-    if failed_payment is not None:
-        verify_outcomes_for_payment(db, payment_id=failed_payment.id)
+        # Failed recovery scenario: verify with payment still failed.
+        failed_payment = db.execute(
+            select(Payment).where(Payment.razorpay_payment_id == "pay_demo_005")
+        ).scalar_one_or_none()
+        if failed_payment is not None:
+            verify_outcomes_for_payment(db, payment_id=failed_payment.id)
 
-    total_opportunities = db.query(RevenueOpportunity).count()
-    verified_recovered_minor = db.query(RecoveryAttempt).filter(RecoveryAttempt.verified_outcome == "VERIFIED_SUCCESS").with_entities(RecoveryAttempt.recovered_amount_minor).all()
-    recovered_sum = sum(row[0] for row in verified_recovered_minor)
+        total_opportunities = db.query(RevenueOpportunity).count()
+        verified_recovered_minor = db.query(RecoveryAttempt).filter(RecoveryAttempt.verified_outcome == "VERIFIED_SUCCESS").with_entities(RecoveryAttempt.recovered_amount_minor).all()
+        recovered_sum = sum(row[0] for row in verified_recovered_minor)
 
-    policy_counts = {
-        "allow": db.query(PolicyEvaluation).filter(PolicyEvaluation.result == "ALLOW").count(),
-        "block": db.query(PolicyEvaluation).filter(PolicyEvaluation.result == "BLOCK").count(),
-        "escalate": db.query(PolicyEvaluation).filter(PolicyEvaluation.result == "ESCALATE").count(),
-    }
+        policy_counts = {
+            "allow": db.query(PolicyEvaluation).filter(PolicyEvaluation.result == "ALLOW").count(),
+            "block": db.query(PolicyEvaluation).filter(PolicyEvaluation.result == "BLOCK").count(),
+            "escalate": db.query(PolicyEvaluation).filter(PolicyEvaluation.result == "ESCALATE").count(),
+        }
 
-    failed_payments = db.query(Payment).filter(Payment.status == "FAILED").count()
-    successful_recoveries = db.query(RecoveryAttempt).filter(RecoveryAttempt.verified_outcome == "VERIFIED_SUCCESS").count()
-    failed_recoveries = db.query(RecoveryAttempt).filter(RecoveryAttempt.verified_outcome == "VERIFIED_FAILURE").count()
+        failed_payments = db.query(Payment).filter(Payment.status == "FAILED").count()
+        successful_recoveries = db.query(RecoveryAttempt).filter(RecoveryAttempt.verified_outcome == "VERIFIED_SUCCESS").count()
+        failed_recoveries = db.query(RecoveryAttempt).filter(RecoveryAttempt.verified_outcome == "VERIFIED_FAILURE").count()
 
-    primary_recovery_opportunity = db.execute(
-        select(RevenueOpportunity)
-        .join(PolicyEvaluation, PolicyEvaluation.opportunity_id == RevenueOpportunity.id)
-        .where(PolicyEvaluation.result == "ALLOW")
-        .order_by(RevenueOpportunity.id.asc())
-    ).scalars().first()
+        primary_recovery_opportunity = db.execute(
+            select(RevenueOpportunity)
+            .join(PolicyEvaluation, PolicyEvaluation.opportunity_id == RevenueOpportunity.id)
+            .where(PolicyEvaluation.result == "ALLOW")
+            .order_by(RevenueOpportunity.id.asc())
+        ).scalars().first()
 
-    blocked_opportunity = db.execute(
-        select(RevenueOpportunity)
-        .join(PolicyEvaluation, PolicyEvaluation.opportunity_id == RevenueOpportunity.id)
-        .where(PolicyEvaluation.result == "BLOCK")
-        .order_by(RevenueOpportunity.id.asc())
-    ).scalars().first()
+        blocked_opportunity = db.execute(
+            select(RevenueOpportunity)
+            .join(PolicyEvaluation, PolicyEvaluation.opportunity_id == RevenueOpportunity.id)
+            .where(PolicyEvaluation.result == "BLOCK")
+            .order_by(RevenueOpportunity.id.asc())
+        ).scalars().first()
 
-    escalated_opportunity = db.execute(
-        select(RevenueOpportunity)
-        .join(PolicyEvaluation, PolicyEvaluation.opportunity_id == RevenueOpportunity.id)
-        .where(PolicyEvaluation.result == "ESCALATE")
-        .order_by(RevenueOpportunity.id.asc())
-    ).scalars().first()
+        escalated_opportunity = db.execute(
+            select(RevenueOpportunity)
+            .join(PolicyEvaluation, PolicyEvaluation.opportunity_id == RevenueOpportunity.id)
+            .where(PolicyEvaluation.result == "ESCALATE")
+            .order_by(RevenueOpportunity.id.asc())
+        ).scalars().first()
 
-    return {
-        "seeded_opportunities": total_opportunities,
-        "policy_counts": policy_counts,
-        "verified_recovered_minor": recovered_sum,
-        "duplicate_events": len([item for item in webhook_results if item.get("duplicate")]),
-        "demo_story": {
-            "failed_payments": failed_payments,
-            "recoverable_opportunities": policy_counts["allow"],
-            "blocked_opportunities": policy_counts["block"],
-            "escalated_opportunities": policy_counts["escalate"],
-            "failed_recoveries": failed_recoveries,
-            "successful_recoveries": successful_recoveries,
-            "primary_recovery_opportunity_id": primary_recovery_opportunity.id if primary_recovery_opportunity else None,
-            "blocked_opportunity_id": blocked_opportunity.id if blocked_opportunity else None,
-            "escalated_opportunity_id": escalated_opportunity.id if escalated_opportunity else None,
-        },
-        "webhook_results": webhook_results,
-    }
+        return {
+            "seeded_opportunities": total_opportunities,
+            "policy_counts": policy_counts,
+            "verified_recovered_minor": recovered_sum,
+            "duplicate_events": len([item for item in webhook_results if item.get("duplicate")]),
+            "demo_story": {
+                "failed_payments": failed_payments,
+                "recoverable_opportunities": policy_counts["allow"],
+                "blocked_opportunities": policy_counts["block"],
+                "escalated_opportunities": policy_counts["escalate"],
+                "failed_recoveries": failed_recoveries,
+                "successful_recoveries": successful_recoveries,
+                "primary_recovery_opportunity_id": primary_recovery_opportunity.id if primary_recovery_opportunity else None,
+                "blocked_opportunity_id": blocked_opportunity.id if blocked_opportunity else None,
+                "escalated_opportunity_id": escalated_opportunity.id if escalated_opportunity else None,
+            },
+            "webhook_results": webhook_results,
+        }
+    finally:
+        recovery_intelligence.get_provider = orig_get_provider
+        recovery_executor.get_payment_adapter = orig_get_adapter

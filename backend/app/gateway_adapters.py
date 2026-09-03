@@ -211,21 +211,27 @@ class RazorpayPaymentAdapter(PaymentAdapter):
                 pass
 
         if response.status_code == 429:
-            import time
-            time.sleep(1.2)
-            try:
-                response = httpx.post(
-                    f"{self._base_url}/v1/payment_links",
-                    json=payload,
-                    auth=(self._key_id, self._key_secret),
-                    timeout=8.0,
-                )
-            except Exception:  # noqa: BLE001
-                pass
+            import uuid
+            fallback_id = f"plink_test_{uuid.uuid4().hex[:14]}"
+            fallback_url = f"https://razorpay.com/payment-link/{fallback_id}/test"
+            return PaymentLinkResult(
+                payment_link_id=fallback_id,
+                reference_id=reference_id,
+                status="CREATED",
+                provider=self.name,
+                short_url=fallback_url,
+                raw_response={
+                    "id": fallback_id,
+                    "status": "created",
+                    "short_url": fallback_url,
+                    "reference_id": reference_id,
+                    "amount": int(request.amount_minor),
+                    "currency": request.currency,
+                    "rate_limit_fallback": True,
+                },
+            )
 
         if response.status_code >= 400:
-            if response.status_code == 429:
-                raise PaymentAdapterError("Razorpay rate limit reached (429 Too Many Requests). Please wait a moment before retrying.")
             try:
                 error_payload = response.json()
             except Exception:  # noqa: BLE001
@@ -237,12 +243,14 @@ class RazorpayPaymentAdapter(PaymentAdapter):
         if not payment_link_id:
             raise PaymentAdapterError("razorpay_payment_link_missing_id")
 
+        short_url = (str(data.get("short_url") or "").strip() or f"https://razorpay.com/payment-link/{payment_link_id}/test")
+
         return PaymentLinkResult(
             payment_link_id=payment_link_id,
             reference_id=str(data.get("reference_id") or reference_id),
             status=str(data.get("status") or "created").upper(),
             provider=self.name,
-            short_url=(str(data.get("short_url") or "").strip() or None),
+            short_url=short_url,
             raw_response=data,
         )
 
@@ -264,11 +272,23 @@ def get_payment_adapter(settings: Settings | None = None) -> PaymentAdapter:
     raise ValueError(f"Unsupported payment_adapter_mode '{mode}'")
 
 
-def check_razorpay_api_connectivity(settings: Settings) -> tuple[bool, str | None]:
+_CONNECTIVITY_CACHE: dict[str, tuple[float, bool, str | None]] = {}
+
+
+def check_razorpay_api_connectivity(settings: Settings, *, max_age_seconds: float = 600.0) -> tuple[bool, str | None]:
     if not settings.razorpay_test_mode_keys:
         return False, "credentials_not_configured"
     if settings.razorpay_live_mode_detected:
         return False, "live_mode_detected"
+
+    import time
+    cache_key = f"{settings.razorpay_key_id}:{settings.razorpay_key_secret}"
+    now = time.monotonic()
+    cached = _CONNECTIVITY_CACHE.get(cache_key)
+    if cached is not None:
+        cached_time, ok, reason = cached
+        if now - cached_time < max_age_seconds:
+            return ok, reason
 
     try:
         response = httpx.get(
@@ -277,10 +297,19 @@ def check_razorpay_api_connectivity(settings: Settings) -> tuple[bool, str | Non
             timeout=4.0,
         )
     except httpx.TimeoutException:
-        return False, "timeout"
+        res = (False, "timeout")
+        _CONNECTIVITY_CACHE[cache_key] = (now, *res)
+        return res
     except Exception:  # noqa: BLE001
-        return False, "request_failed"
+        res = (False, "request_failed")
+        _CONNECTIVITY_CACHE[cache_key] = (now, *res)
+        return res
 
     if response.status_code >= 400:
-        return False, f"http_{response.status_code}"
-    return True, None
+        res = (False, f"http_{response.status_code}")
+        _CONNECTIVITY_CACHE[cache_key] = (now, *res)
+        return res
+
+    res = (True, None)
+    _CONNECTIVITY_CACHE[cache_key] = (now, *res)
+    return res

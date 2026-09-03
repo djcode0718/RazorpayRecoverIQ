@@ -79,7 +79,16 @@ def execute_recovery_attempt(
         )
     ).scalar_one_or_none()
     if open_attempt is not None:
-        return open_attempt
+        existing_link = db.execute(
+            select(RecoveryPaymentLink).where(RecoveryPaymentLink.recovery_attempt_id == open_attempt.id)
+        ).scalars().first()
+
+        adapter_mode = str(getattr(settings, "payment_adapter_mode", "simulation")).strip().lower()
+        if existing_link is not None:
+            raw_data = json.loads(existing_link.external_response_reference or "{}") if existing_link.external_response_reference else {}
+            has_live_link = bool(raw_data.get("short_url")) or existing_link.payment_link_id.startswith("plink_T")
+            if has_live_link or adapter_mode == "simulation":
+                return open_attempt
 
     attempt_number = db.execute(
         select(func.count(RecoveryAttempt.id)).where(RecoveryAttempt.opportunity_id == opportunity_id)

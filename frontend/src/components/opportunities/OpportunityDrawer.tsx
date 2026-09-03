@@ -102,15 +102,22 @@ export function OpportunityDrawer({
     detail?.opportunity?.status === "RESOLVED";
 
   const isPolicyAllowed =
-    detail?.policy_checks?.result === "ALLOW" ||
-    selectedItem?.policy_result === "ALLOW" ||
-    true;
+    detail?.action_traceability?.allow_execution !== false &&
+    detail?.policy_checks?.result !== "BLOCK" &&
+    detail?.policy_checks?.result !== "ESCALATE" &&
+    selectedItem?.policy_result !== "BLOCK" &&
+    selectedItem?.policy_result !== "ESCALATE";
 
-  const canExecute =
-    isPolicyAllowed &&
-    !isResolved &&
-    (selectedItem?.status === "OPEN" || detail?.opportunity?.status === "OPEN" || true) &&
-    detail?.action_traceability?.execution_status !== "SUCCEEDED";
+  const isPolicyBlocked =
+    detail?.action_traceability?.allow_execution === false ||
+    detail?.policy_checks?.result === "BLOCK" ||
+    selectedItem?.policy_result === "BLOCK";
+
+  const isEscalated =
+    detail?.policy_checks?.result === "ESCALATE" ||
+    selectedItem?.policy_result === "ESCALATE";
+
+  const canExecute = isPolicyAllowed && !isResolved;
 
   const latestAttempt =
     detail?.attempts && detail.attempts.length > 0
@@ -340,6 +347,30 @@ export function OpportunityDrawer({
                           {isExecuting ? "Dispatching..." : "Create Payment Link via Razorpay \u2192"}
                         </button>
                       )}
+                    </div>
+                  )}
+
+                  {isPolicyBlocked && !isResolved && (
+                    <div style={{ marginTop: "1rem", padding: "12px 16px", borderRadius: "8px", background: "rgba(239, 68, 68, 0.08)", border: "1px solid rgba(239, 68, 68, 0.25)", display: "flex", alignItems: "center", gap: "10px" }}>
+                      <span style={{ fontSize: "1.2rem" }}>🛑</span>
+                      <div>
+                        <strong style={{ color: "#ef4444", fontSize: "0.88rem" }}>Policy Gate Blocked</strong>
+                        <p style={{ margin: "2px 0 0", fontSize: "0.78rem", color: "#9ca3af" }}>
+                          Automated recovery link generation is blocked by deterministic safety gates (e.g. amount exceeds risk threshold or duplicate guard).
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
+                  {isEscalated && !isResolved && (
+                    <div style={{ marginTop: "1rem", padding: "12px 16px", borderRadius: "8px", background: "rgba(245, 158, 11, 0.08)", border: "1px solid rgba(245, 158, 11, 0.25)", display: "flex", alignItems: "center", gap: "10px" }}>
+                      <span style={{ fontSize: "1.2rem" }}>⚠️</span>
+                      <div>
+                        <strong style={{ color: "#f59e0b", fontSize: "0.88rem" }}>Escalated for Manual Review</strong>
+                        <p style={{ margin: "2px 0 0", fontSize: "0.78rem", color: "#9ca3af" }}>
+                          AI confidence is below automated threshold. Requires manual manager sign-off before dispatching.
+                        </p>
+                      </div>
                     </div>
                   )}
 

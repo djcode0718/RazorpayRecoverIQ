@@ -404,12 +404,21 @@ export function App() {
     setIsExecutingRecovery(true);
     setExecutionMessage(null);
     try {
-      await api.executeRecovery(id);
-      setExecutionMessage("✓ Recovery action triggered successfully. Webhook verified.");
+      const result = await api.executeRecovery(id);
+      setExecutionMessage("✓ Recovery action dispatched successfully.");
       await loadOpportunities(false);
       await loadOpportunityDetail(id);
       const updatedSummary = await api.getSummary();
       setSummary(updatedSummary);
+
+      const linkUrl =
+        result?.data?.payment_link?.short_url ||
+        (result?.data?.payment_link?.payment_link_id
+          ? `https://razorpay.com/payment-link/${result.data.payment_link.payment_link_id}/test`
+          : null);
+      if (linkUrl) {
+        window.open(linkUrl, "_blank", "noopener,noreferrer");
+      }
 
       const opp = opportunities.find((o) => o.id === id) || null;
       if (opp && detail) {
