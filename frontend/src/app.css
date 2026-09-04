@@ -233,10 +233,13 @@ body {
   overflow-x: hidden;
 }
 
+html:has(body.drawer-open),
 body.drawer-open {
   overflow: hidden !important;
+  overscroll-behavior: none !important;
   touch-action: none;
 }
+
 
 /* Typography Elements — Proportional Hierarchy */
 h1, h2, h3, h4, h5, h6 {
@@ -2278,6 +2281,8 @@ input, select, textarea, button, optgroup {
   opacity: 0;
   visibility: hidden;
   transition: opacity 0.25s ease, visibility 0.25s ease;
+  overscroll-behavior: contain;
+  touch-action: none;
 }
 
 .drawer-backdrop.open {
@@ -2301,6 +2306,7 @@ input, select, textarea, button, optgroup {
   transform: translateX(100%);
   transition: transform 0.28s cubic-bezier(0.16, 1, 0.3, 1);
   overflow: hidden;
+  overscroll-behavior: contain;
 }
 
 .drawer-container.open {
@@ -2361,6 +2367,8 @@ input, select, textarea, button, optgroup {
 .drawer-body {
   padding: 18px 22px;
   overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
   flex: 1;
   display: flex;
   flex-direction: column;
@@ -2905,38 +2913,55 @@ input, select, textarea, button, optgroup {
   gap: var(--space-md);
 }
 
-.evaluation-config-accordion {
+.evaluation-controls-wrapper {
   border: 1px solid var(--line);
   border-radius: var(--radius-md);
   background: var(--panel-soft);
   overflow: hidden;
   margin-top: var(--space-xs);
+  display: flex;
+  flex-direction: column;
 }
 
-.config-summary {
+.evaluation-controls-bar {
   padding: 10px 14px;
+  background: var(--panel);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-md);
+  flex-wrap: wrap;
+}
+
+.btn-toggle-config {
+  background: transparent;
+  border: 1px solid transparent;
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
   font-size: 12.5px;
   font-weight: 600;
   color: var(--text);
   cursor: pointer;
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  user-select: none;
-  background: var(--panel);
+  gap: 8px;
+  transition: all 0.15s ease;
 }
 
-.config-summary:hover {
+.btn-toggle-config:hover,
+.btn-toggle-config.active {
   background: var(--panel-elevated);
+  border-color: var(--line);
 }
 
 .evaluation-controls-form {
   display: grid;
-  grid-template-columns: repeat(4, 1fr) auto;
+  grid-template-columns: repeat(4, 1fr);
   gap: var(--space-md);
   align-items: flex-end;
   padding: var(--space-lg);
   border-top: 1px solid var(--line);
+  background: var(--panel-soft);
 }
 
 .eval-form-actions {
