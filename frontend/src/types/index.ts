@@ -7,6 +7,9 @@ export type OperatingStatus = {
   policy_engine_note?: string;
   webhook: "CONFIGURED" | "WAITING" | "VERIFIED" | "DEGRADED" | string;
   webhook_note?: string;
+  mcp_status?: "AVAILABLE" | "ACTIVE" | "NOT_CONFIGURED" | "DEGRADED" | "UNAVAILABLE" | string;
+  mcp_note?: string;
+  execution_strategy?: string;
   api_connectivity?: boolean;
   api_connectivity_reason?: string | null;
   last_event?: string | null;
@@ -173,6 +176,8 @@ export type OpportunityDetail = {
     verification_status: "UNVERIFIED" | "PENDING" | "VERIFIED" | "VERIFIED_SUCCESS" | "VERIFIED_FAILURE" | string;
     outcome: "PENDING" | "RECOVERED" | "FAILED" | "EXPIRED" | "BLOCKED" | "ESCALATED" | "NOT_RECOVERED" | string;
     execution_mode: string;
+    execution_strategy?: string;
+    used_fallback?: boolean;
   };
   semantic_states?: {
     original_payment: string | null;
@@ -206,6 +211,9 @@ export type OpportunityDetail = {
       status: string;
       amount_minor?: number;
       short_url?: string | null;
+      execution_strategy?: string | null;
+      adapter?: string | null;
+      used_fallback?: boolean;
     } | null;
   }>;
   audit_trail?: Array<{

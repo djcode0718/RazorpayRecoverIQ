@@ -84,6 +84,28 @@ export function Header({
   const isPaymentTest = operatingStatus.payment_environment === "RAZORPAY TEST";
   const isWebhookGood = operatingStatus.webhook === "VERIFIED" || operatingStatus.webhook === "CONFIGURED";
   const isPolicyGood = operatingStatus.policy_engine === "ACTIVE";
+  const mcpStatus = operatingStatus.mcp_status || (isPaymentTest ? "AVAILABLE" : "NOT_CONFIGURED");
+  const mcpTone =
+    mcpStatus === "ACTIVE"
+      ? "good"
+      : mcpStatus === "AVAILABLE"
+      ? "info"
+      : mcpStatus === "DEGRADED"
+      ? "warn"
+      : mcpStatus === "UNAVAILABLE"
+      ? "bad"
+      : "";
+
+  const mcpLabel =
+    mcpStatus === "ACTIVE"
+      ? "Active"
+      : mcpStatus === "AVAILABLE"
+      ? "Available"
+      : mcpStatus === "DEGRADED"
+      ? "Degraded"
+      : mcpStatus === "UNAVAILABLE"
+      ? "Unavailable"
+      : "Not Configured";
 
   return (
     <header className="hero-header-panel panel">
@@ -101,6 +123,13 @@ export function Header({
             </span>
             <span className={`status-dot-pill ${isPolicyGood ? "good" : "bad"}`} title="Deterministic Safety Gate Policy">
               Policy {isPolicyGood ? "7/7 Active" : "Degraded"}
+            </span>
+            <span
+              className={`status-dot-pill ${mcpTone}`}
+              title={operatingStatus.mcp_note || "Razorpay Model Context Protocol (MCP) Integration Status"}
+              aria-label={`MCP Status: ${mcpLabel}`}
+            >
+              MCP {mcpLabel}
             </span>
           </div>
         </div>

@@ -427,7 +427,15 @@ export function OpportunityDrawer({
                     </div>
                     <div className="stepper-text">
                       <strong>Recovery Action Dispatched</strong>
-                      <span>Smart payment link created in Razorpay</span>
+                      <span>
+                        {paymentLink?.execution_strategy === "MCP"
+                          ? paymentLink.used_fallback
+                            ? "Smart link created via MCP (REST fallback)"
+                            : "Smart payment link created via Razorpay MCP"
+                          : paymentLink?.used_fallback
+                          ? "Smart link created via Direct REST (MCP fallback)"
+                          : "Smart payment link created in Razorpay"}
+                      </span>
                     </div>
                   </div>
                   <div className={`stepper-connector ${isResolved ? "active" : ""}`} />
@@ -544,6 +552,26 @@ export function OpportunityDrawer({
                         <div>
                           <span className="link-field-label">Reference ID</span>
                           <code className="link-field-code">{paymentLink.payment_link_reference_id}</code>
+                        </div>
+                        <div>
+                          <span className="link-field-label">Execution Strategy</span>
+                          <div style={{ marginTop: "3px" }}>
+                            {paymentLink.execution_strategy === "MCP" ? (
+                              paymentLink.used_fallback ? (
+                                <Badge text="REST → MCP (Fallback)" tone="info" size="sm" />
+                              ) : (
+                                <Badge text="Razorpay MCP" tone="good" size="sm" />
+                              )
+                            ) : paymentLink.execution_strategy === "DIRECT_REST" ? (
+                              paymentLink.used_fallback ? (
+                                <Badge text="MCP → REST (Fallback)" tone="info" size="sm" />
+                              ) : (
+                                <Badge text="Direct REST" tone="neutral" size="sm" />
+                              )
+                            ) : (
+                              <Badge text={paymentLink.execution_strategy || "Direct REST"} tone="neutral" size="sm" />
+                            )}
+                          </div>
                         </div>
                         <div>
                           <span className="link-field-label">Short URL</span>

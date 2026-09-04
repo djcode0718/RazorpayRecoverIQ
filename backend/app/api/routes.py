@@ -7,20 +7,25 @@ import httpx
 from fastapi import APIRouter, Depends, Header, Query, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
-from sqlalchemy import func, select, text
+from sqlalchemy import func, or_, select, text
 from sqlalchemy.orm import Session
 
 from ..config import Settings, get_settings
 from ..db import get_db
-from ..security import verify_security_guard
+from ..security import redact_sensitive_data, safe_error_payload, sanitize_error_message, verify_security_guard
 from ..demo_seed import seed_core_recovery_demo
 from ..demo_seed import reset_core_recovery_data
 from ..economics import estimate_intervention_cost_minor
 from ..evaluation import (
+    _baseline_prediction,
+    _recoveriq_policy_prediction,
+    _summary_from_predictions,
     evaluation_summary_to_dict,
     generate_synthetic_cases,
-    get_strategy_attribution_comparison,
+    get_evaluation_run_cases,
     get_evaluation_run_summary,
+    get_recoveriq_policy_path_summary,
+    get_strategy_attribution_comparison,
     run_baseline_evaluation,
 )
 from ..models import (
@@ -38,7 +43,13 @@ from ..models import (
     WebhookEvent,
     WebhookProcessorLedger,
 )
-from ..gateway_adapters import check_razorpay_api_connectivity
+from ..gateway_adapters import (
+    PaymentAdapterAccountLimitError,
+    PaymentAdapterError,
+    PaymentAdapterRateLimitError,
+    PaymentAdapterTimeoutError,
+    check_razorpay_api_connectivity,
+)
 from ..policy_engine import evaluate_policy_for_decision
 from ..recovery_executor import execute_recovery_attempt
 from ..recovery_intelligence import create_recovery_decision_for_opportunity
@@ -88,11 +99,27 @@ def _parse_stage(event_type: str) -> str | None:
     prefix = "workflow.stage."
     if event_type.startswith(prefix):
         return event_type[len(prefix) :]
+    if (
+        event_type.startswith("recovery.execution.")
+        or event_type.startswith("recovery.payment_link.")
+        or event_type.startswith("recovery.attempt.")
+    ):
+        return "execution"
+    if (
+        event_type.startswith("recovery.verification.")
+        or event_type.startswith("outcome.")
+        or event_type == "recovery.completed"
+    ):
+        return "verification"
+    if event_type.startswith("policy."):
+        return "policy"
+    if event_type.startswith("webhook."):
+        return "webhook"
     return None
 
 
 def _stage_group(stage: str | None) -> str:
-    if stage in {"detection", "diagnosis"}:
+    if stage in {"detection", "diagnosis", "signal"}:
         return "Signal"
     if stage in {"policy"}:
         return "Policy"
@@ -106,7 +133,7 @@ def _outcome_status(outcome_snapshot: dict | None, reason: str | None) -> str:
     candidate = str(payload.get("status") or reason or "").lower()
     if any(token in candidate for token in ["deny", "blocked", "failed", "error"]):
         return "fail"
-    if any(token in candidate for token in ["pending", "unverified"]):
+    if any(token in candidate for token in ["pending", "unverified", "awaiting"]):
         return "pending"
     return "pass"
 
@@ -216,14 +243,21 @@ def _timeline_from_audits(audits: list[AuditEvent]) -> list[dict]:
         stage = _parse_stage(audit.event_type)
         timeline.append(
             {
+                "id": audit.id,
                 "timestamp": audit.timestamp.isoformat() if audit.timestamp else None,
                 "event_type": audit.event_type,
                 "stage": stage,
                 "stage_group": _stage_group(stage),
                 "outcome_status": _outcome_status(audit.outcome_snapshot, audit.reason),
                 "actor_type": audit.actor_type,
-                "reason": audit.reason,
-                "outcome": audit.outcome_snapshot,
+                "actor_id": audit.actor_id,
+                "entity_type": audit.entity_type,
+                "entity_id": audit.entity_id,
+                "correlation_id": audit.correlation_id,
+                "result": audit.result,
+                "reason": sanitize_error_message(audit.reason) if audit.reason else None,
+                "metadata": redact_sensitive_data(audit.metadata_json),
+                "outcome": redact_sensitive_data(audit.outcome_snapshot),
             }
         )
     return timeline
@@ -423,7 +457,10 @@ def get_truthful_operating_status(db: Session, settings: Settings) -> dict[str, 
 
     # 2. PAYMENT ENVIRONMENT
     adapter_mode = settings.payment_adapter_mode.strip().lower()
-    adapter_test_mode = adapter_mode in {"razorpay_test", "test_mode"}
+    adapter_test_mode = adapter_mode in {
+        "razorpay_test", "test_mode", "rest_primary", "rest_with_mcp_fallback",
+        "mcp_primary", "mcp_with_rest_fallback", "mcp", "razorpay_mcp", "mcp_only", "rest_only"
+    }
     live_mode_detected = settings.razorpay_live_mode_detected
     credentials_configured = settings.razorpay_configured
     credentials_test_mode = settings.razorpay_test_mode_keys and credentials_configured and not live_mode_detected
@@ -508,6 +545,29 @@ def get_truthful_operating_status(db: Session, settings: Settings) -> dict[str, 
         webhook_status = "CONFIGURED"
         webhook_note = "Configured, awaiting verified events"
 
+    # 6. MCP INTEGRATION STATUS
+    mcp_enabled = bool(getattr(settings, "razorpay_mcp_enabled", False))
+    mcp_configured = bool(getattr(settings, "razorpay_mcp_configured", False))
+    mcp_endpoint = str(getattr(settings, "razorpay_mcp_endpoint", "")).strip()
+    exec_strategy_mode = str(getattr(settings, "payment_adapter_mode", "simulation")).strip().lower()
+
+    if settings.razorpay_live_mode_detected:
+        mcp_status = "UNAVAILABLE"
+        mcp_note = "MCP disabled in live mode for safety"
+    elif not mcp_enabled:
+        mcp_status = "NOT_CONFIGURED"
+        mcp_note = "Razorpay MCP integration is disabled"
+    elif not mcp_configured or not mcp_endpoint:
+        mcp_status = "NOT_CONFIGURED"
+        mcp_note = "Razorpay MCP endpoint or auth credentials missing"
+    else:
+        if exec_strategy_mode in {"mcp", "razorpay_mcp", "mcp_only", "mcp_primary", "razorpay_mcp_primary", "mcp_with_rest_fallback"}:
+            mcp_status = "ACTIVE"
+            mcp_note = f"Razorpay MCP active ({mcp_endpoint})"
+        else:
+            mcp_status = "AVAILABLE"
+            mcp_note = f"Razorpay MCP configured & available as fallback ({mcp_endpoint})"
+
     return {
         "data_source": data_source,
         "payment_environment": payment_environment,
@@ -517,6 +577,9 @@ def get_truthful_operating_status(db: Session, settings: Settings) -> dict[str, 
         "policy_engine_note": policy_engine_note,
         "webhook": webhook_status,
         "webhook_note": webhook_note,
+        "mcp_status": mcp_status,
+        "mcp_note": mcp_note,
+        "execution_strategy": exec_strategy_mode.upper(),
         "api_connectivity": api_connectivity,
         "api_connectivity_reason": api_connectivity_reason,
         "last_event": last_event.event_type if last_event else None,
@@ -1024,16 +1087,22 @@ def get_opportunity_detail(opportunity_id: int, db: Session = Depends(get_db), s
         customer_payments = db.execute(select(Payment).where(Payment.customer_id == customer_id)).scalars().all()
 
     workflow_audits: list[AuditEvent] = []
-    if payment is not None and payment.razorpay_payment_id:
-        workflow_chain_id = f"payment:{payment.razorpay_payment_id}"
-        workflow_audits = list(
-            db.execute(
+    workflow_chain_id = f"payment:{payment.razorpay_payment_id}" if payment and payment.razorpay_payment_id else None
+    attempt_ids = [str(a.id) for a in attempts]
+    conditions = []
+    if workflow_chain_id:
+        conditions.append((AuditEvent.entity_type == "RecoveryWorkflow") & (AuditEvent.entity_id == workflow_chain_id))
+    if attempt_ids:
+        conditions.append((AuditEvent.entity_type == "RecoveryAttempt") & (AuditEvent.entity_id.in_(attempt_ids)))
+    conditions.append((AuditEvent.entity_type == "RevenueOpportunity") & (AuditEvent.entity_id == str(opportunity_id)))
+
+    workflow_audits = list(
+        db.execute(
             select(AuditEvent)
-            .where(AuditEvent.entity_type == "RecoveryWorkflow")
-            .where(AuditEvent.entity_id == workflow_chain_id)
+            .where(or_(*conditions))
             .order_by(AuditEvent.id.asc())
         ).scalars().all()
-        )
+    )
 
     gross_recovered_minor = sum(_verified_success_amount(attempt) for attempt in attempts)
     total_intervention_cost_minor = sum(estimate_intervention_cost_minor(attempt.action) for attempt in attempts)
@@ -1445,6 +1514,16 @@ def get_opportunity_detail(opportunity_id: int, db: Session = Depends(get_db), s
             "verification_status": verification_status,
             "outcome": outcome,
             "execution_mode": settings.payment_adapter_mode if isinstance(settings, Settings) else get_settings().payment_adapter_mode,
+            "execution_strategy": (
+                json.loads(link_by_attempt_id[attempts[-1].id].external_response_reference).get("execution_strategy")
+                if attempts and attempts[-1].id in link_by_attempt_id and link_by_attempt_id[attempts[-1].id].external_response_reference
+                else ("MCP" if (settings.payment_adapter_mode if isinstance(settings, Settings) else get_settings().payment_adapter_mode) in {"mcp", "razorpay_mcp", "mcp_primary"} else "Direct REST")
+            ),
+            "used_fallback": (
+                json.loads(link_by_attempt_id[attempts[-1].id].external_response_reference).get("used_fallback", False)
+                if attempts and attempts[-1].id in link_by_attempt_id and link_by_attempt_id[attempts[-1].id].external_response_reference
+                else False
+            ),
         },
         "semantic_states": semantic_states,
         "recovery_state": recovery_state,
@@ -1469,6 +1548,21 @@ def get_opportunity_detail(opportunity_id: int, db: Session = Depends(get_db), s
                             if link_by_attempt_id[attempt.id].external_response_reference
                             else None
                         ) if link_by_attempt_id[attempt.id].external_response_reference else None,
+                        "execution_strategy": (
+                            json.loads(link_by_attempt_id[attempt.id].external_response_reference).get("execution_strategy")
+                            if link_by_attempt_id[attempt.id].external_response_reference
+                            else None
+                        ) if link_by_attempt_id[attempt.id].external_response_reference else None,
+                        "adapter": (
+                            json.loads(link_by_attempt_id[attempt.id].external_response_reference).get("adapter")
+                            if link_by_attempt_id[attempt.id].external_response_reference
+                            else None
+                        ) if link_by_attempt_id[attempt.id].external_response_reference else None,
+                        "used_fallback": (
+                            json.loads(link_by_attempt_id[attempt.id].external_response_reference).get("used_fallback", False)
+                            if link_by_attempt_id[attempt.id].external_response_reference
+                            else False
+                        ) if link_by_attempt_id[attempt.id].external_response_reference else False,
                     }
                     if attempt.id in link_by_attempt_id
                     else None
@@ -1641,14 +1735,68 @@ def execute_opportunity(
             decision_id=decision.id,
             policy_evaluation_id=policy.id,
         )
-    except ValueError as exc:
+    except PaymentAdapterRateLimitError as exc:
+        retry_after = getattr(exc, "retry_after_seconds", 5)
+        return JSONResponse(
+            status_code=429,
+            headers={"Retry-After": str(retry_after)},
+            content={
+                "success": False,
+                "error": {
+                    "code": "RATE_LIMITED",
+                    "message": str(exc),
+                    "retryable": True,
+                    "retry_after_seconds": retry_after,
+                },
+            },
+        )
+    except PaymentAdapterAccountLimitError as exc:
+        return JSONResponse(
+            status_code=429,
+            content={
+                "success": False,
+                "error": {
+                    "code": "GATEWAY_ACCOUNT_LIMIT",
+                    "message": str(exc),
+                    "retryable": False,
+                },
+            },
+        )
+    except PaymentAdapterTimeoutError as exc:
+        return JSONResponse(
+            status_code=504,
+            content={
+                "success": False,
+                "error": {
+                    "code": "GATEWAY_TIMEOUT",
+                    "message": "Gateway timed out during payment link creation. Outcome is ambiguous and will be verified safely.",
+                    "retryable": False,
+                    "ambiguous_outcome": True,
+                },
+            },
+        )
+    except (PaymentAdapterError, ValueError) as exc:
+        err_msg = str(exc)
+        if "adapter_timeout" in err_msg:
+            return JSONResponse(
+                status_code=504,
+                content={
+                    "success": False,
+                    "error": {
+                        "code": "GATEWAY_TIMEOUT",
+                        "message": "Gateway timed out during payment link creation. Outcome is ambiguous and will be verified safely.",
+                        "retryable": False,
+                        "ambiguous_outcome": True,
+                    },
+                },
+            )
         return JSONResponse(
             status_code=409,
             content={
                 "success": False,
                 "error": {
                     "code": "EXECUTION_BLOCKED",
-                    "message": str(exc),
+                    "message": err_msg,
                 },
             },
         )
@@ -1714,6 +1862,7 @@ def execute_opportunity(
 
 
 @router.get("/opportunities/{opportunity_id}/audit")
+@router.get("/opportunities/{opportunity_id}/evidence")
 def get_opportunity_audit(opportunity_id: int, db: Session = Depends(get_db)):
     opportunity = db.execute(select(RevenueOpportunity).where(RevenueOpportunity.id == opportunity_id)).scalar_one_or_none()
     if opportunity is None:
@@ -1730,16 +1879,20 @@ def get_opportunity_audit(opportunity_id: int, db: Session = Depends(get_db)):
 
     payment = db.execute(select(Payment).where(Payment.id == opportunity.payment_id)).scalar_one_or_none() if opportunity.payment_id else None
     workflow_chain_id = f"payment:{payment.razorpay_payment_id}" if payment and payment.razorpay_payment_id else None
-    audits = (
-        db.execute(
-            select(AuditEvent)
-            .where(AuditEvent.entity_type == "RecoveryWorkflow")
-            .where(AuditEvent.entity_id == workflow_chain_id)
-            .order_by(AuditEvent.id.asc())
-        ).scalars().all()
-        if workflow_chain_id
-        else []
-    )
+    attempts = db.execute(select(RecoveryAttempt).where(RecoveryAttempt.opportunity_id == opportunity_id)).scalars().all()
+    attempt_ids = [str(a.id) for a in attempts]
+    conditions = []
+    if workflow_chain_id:
+        conditions.append((AuditEvent.entity_type == "RecoveryWorkflow") & (AuditEvent.entity_id == workflow_chain_id))
+    if attempt_ids:
+        conditions.append((AuditEvent.entity_type == "RecoveryAttempt") & (AuditEvent.entity_id.in_(attempt_ids)))
+    conditions.append((AuditEvent.entity_type == "RevenueOpportunity") & (AuditEvent.entity_id == str(opportunity_id)))
+
+    audits = db.execute(
+        select(AuditEvent)
+        .where(or_(*conditions))
+        .order_by(AuditEvent.id.asc())
+    ).scalars().all()
     timeline = _timeline_from_audits(list(audits))
     return {
         "success": True,
@@ -2361,10 +2514,11 @@ def get_evaluation_history(db: Session = Depends(get_db), limit: int = 10) -> di
 
     items: list[dict] = []
     for row in run_rows:
-        summary = get_evaluation_run_summary(db, evaluation_run_id=row.evaluation_run_id)
+        summary = get_recoveriq_policy_path_summary(db, evaluation_run_id=row.evaluation_run_id) or get_evaluation_run_summary(db, evaluation_run_id=row.evaluation_run_id)
         if summary is None:
             continue
         summary_payload = evaluation_summary_to_dict(summary)
+        summary_payload["evaluation_run_id"] = row.evaluation_run_id
         summary_payload["last_created_at"] = row.last_created_at.isoformat() if row.last_created_at else None
         items.append(summary_payload)
 
@@ -2444,72 +2598,95 @@ def get_evaluation_comparison(run_id: str, db: Session = Depends(get_db)):
 
 
 @router.get("/evaluation/{run_id}/drilldown")
-def get_evaluation_run_drilldown(run_id: str, db: Session = Depends(get_db)):
+def get_evaluation_run_drilldown(run_id: str, strategy: str = "recoveriq", db: Session = Depends(get_db)):
     summary, not_found = _evaluation_summary_or_404(db, run_id=run_id)
     if not_found is not None:
         return not_found
 
-    results = db.execute(
-        select(EvaluationResult)
-        .where(EvaluationResult.evaluation_run_id == run_id)
-        .order_by(EvaluationResult.id.asc())
-    ).scalars().all()
+    cases = get_evaluation_run_cases(db, evaluation_run_id=run_id)
+    if not cases:
+        return JSONResponse(
+            status_code=404,
+            content={
+                "success": False,
+                "error": {
+                    "code": "EVAL_RUN_NOT_FOUND",
+                    "message": "Evaluation run cases not found.",
+                },
+            },
+        )
 
-    case_ids = [result.case_id for result in results]
-    cases = db.execute(select(EvaluationCase).where(EvaluationCase.id.in_(case_ids))).scalars().all() if case_ids else []
-    case_map = {case.id: case for case in cases}
+    if strategy.lower() == "baseline":
+        predictor = _baseline_prediction
+        cost_func = lambda action: 500 if action != "NO_ACTION" else 0
+        effective_run_id = run_id
+    else:
+        predictor = _recoveriq_policy_prediction
+        cost_func = lambda action: 450 if action != "NO_ACTION" else 0
+        effective_run_id = f"{run_id}:recoveriq_policy"
+
+    run_summary = _summary_from_predictions(
+        run_id=effective_run_id,
+        cases=cases,
+        predictor=predictor,
+        intervention_cost_minor_for_action=cost_func,
+    )
 
     tp = fp = fn = tn = 0
     failed_case_count = successful_case_count = 0
     failed_correct = successful_correct = 0
     sample_errors: list[dict] = []
 
-    for result in results:
-        if result.predicted_recoverable and result.actual_recoverable:
+    for case in cases:
+        predicted_recoverable, predicted_action, prob, reason_code = predictor(case)
+        actual_recoverable = bool(case.ground_truth_recoverable)
+        correct = (predicted_recoverable == actual_recoverable)
+        false_positive = (predicted_recoverable and not actual_recoverable)
+        false_negative = ((not predicted_recoverable) and actual_recoverable)
+
+        if predicted_recoverable and actual_recoverable:
             tp += 1
-        elif result.predicted_recoverable and not result.actual_recoverable:
+        elif false_positive:
             fp += 1
-        elif (not result.predicted_recoverable) and result.actual_recoverable:
+        elif false_negative:
             fn += 1
         else:
             tn += 1
 
-        case = case_map.get(result.case_id)
-        if case is not None:
-            is_failed_case = case.case_type == "failed_payment"
-            if is_failed_case:
-                failed_case_count += 1
-                if result.correct:
-                    failed_correct += 1
-            else:
-                successful_case_count += 1
-                if result.correct:
-                    successful_correct += 1
+        is_failed_case = (case.case_type == "failed_payment")
+        if is_failed_case:
+            failed_case_count += 1
+            if correct:
+                failed_correct += 1
+        else:
+            successful_case_count += 1
+            if correct:
+                successful_correct += 1
 
-            if (result.false_positive or result.false_negative) and len(sample_errors) < 10:
-                sample_errors.append(
-                    {
-                        "case_id": case.id,
-                        "error_type": "false_positive" if result.false_positive else "false_negative",
-                        "predicted_action": result.predicted_action,
-                        "actual_action": result.actual_action,
-                        "failure_reason": case.failure_features.get("reason"),
-                    }
-                )
+        if (false_positive or false_negative) and len(sample_errors) < 10:
+            sample_errors.append(
+                {
+                    "case_id": case.id,
+                    "error_type": "FALSE_POSITIVE" if false_positive else "FALSE_NEGATIVE",
+                    "predicted_action": predicted_action,
+                    "actual_action": case.ground_truth_action,
+                    "failure_reason": case.failure_features.get("reason"),
+                }
+            )
 
     data = {
-        "summary": evaluation_summary_to_dict(summary),
+        "summary": evaluation_summary_to_dict(run_summary),
         "confusion_matrix": {"tp": tp, "fp": fp, "fn": fn, "tn": tn},
         "false_positive_cost": {
-            "count": summary.false_positive_count,
-            "financial_exposure_minor": summary.false_positive_exposure_minor,
-            "intervention_cost_minor": summary.false_positive_intervention_cost_minor,
+            "count": run_summary.false_positive_count,
+            "financial_exposure_minor": run_summary.false_positive_exposure_minor,
+            "intervention_cost_minor": run_summary.false_positive_intervention_cost_minor,
         },
         "operational": {
-            "allowed": summary.allowed_count,
-            "blocked": summary.blocked_count,
-            "escalated": summary.escalated_count,
-            "failed": summary.failed_count,
+            "allowed": run_summary.allowed_count,
+            "blocked": run_summary.blocked_count,
+            "escalated": run_summary.escalated_count,
+            "failed": run_summary.failed_count,
         },
         "metric_drilldown": {
             "failed_payment_accuracy": round(failed_correct / failed_case_count, 4) if failed_case_count else 0.0,

@@ -447,3 +447,94 @@ def test_money_loop_10_complete_audit_trail(tmp_path: Path) -> None:
     assert any("diagnosis" in e for e in audit_events)
     assert any("policy" in e for e in audit_events)
     assert any("execution" in e for e in audit_events)
+
+
+def test_money_loop_11_rate_limit_and_timeout_classification(tmp_path: Path, monkeypatch) -> None:
+    """11. Prove 429 Rate Limit is classified as retryable HTTP 429, and timeouts as non-retryable ambiguous 504."""
+    client, secret = _build_test_client(tmp_path, adapter_mode="razorpay_test")
+    session = get_session_local()()
+
+    # Seed an open opportunity
+    opp = RevenueOpportunity(
+        amount_at_risk_minor=200000,
+        currency="INR",
+        failure_category="NETWORK",
+        failure_reason="network",
+        recovery_probability=80,
+        confidence=85,
+        status="DETECTED",
+    )
+    session.add(opp)
+    session.commit()
+    session.refresh(opp)
+    opp_id = opp.id
+
+    dec = RecoveryDecision(
+        opportunity_id=opp.id,
+        diagnosis="Payment failed due to transient gateway timeout",
+        evidence={"signals": []},
+        recovery_probability=80,
+        confidence=85,
+        recommended_action="RETRY",
+        expected_recovery_minor=160000,
+        estimated_cost_minor=500,
+        expected_net_recovery_minor=159500,
+        decision_source="AI_PRIMARY",
+        provider="mock",
+        schema_version="v1",
+    )
+    session.add(dec)
+    session.commit()
+    session.refresh(dec)
+
+    pe = PolicyEvaluation(
+        opportunity_id=opp.id,
+        decision_id=dec.id,
+        result="ALLOW",
+        reason_codes={"failed": [], "passed": ["all"]},
+        evaluated_rules={},
+        max_amount_check=True,
+        confidence_check=True,
+        retry_limit_check=True,
+        economic_check=True,
+        duplicate_check=True,
+        environment_check=True,
+        policy_version="v1.0",
+    )
+    session.add(pe)
+    session.commit()
+    session.close()
+
+    # 1. Rate Limit scenario (HTTP 429 from Razorpay)
+    class _RateLimitAdapter:
+        def create_payment_link(self, request):
+            from app.gateway_adapters import PaymentAdapterRateLimitError
+            raise PaymentAdapterRateLimitError("Razorpay Rate Limit (429): Too Many Requests", retry_after_seconds=7)
+
+    monkeypatch.setattr("app.recovery_executor.get_payment_adapter", lambda settings: _RateLimitAdapter())
+
+    res_429 = client.post(f"/api/v1/opportunities/{opp_id}/execute")
+    assert res_429.status_code == 429
+    payload_429 = res_429.json()
+    assert payload_429["success"] is False
+    assert payload_429["error"]["code"] == "RATE_LIMITED"
+    assert payload_429["error"]["retryable"] is True
+    assert payload_429["error"]["retry_after_seconds"] == 7
+    assert res_429.headers.get("Retry-After") == "7"
+
+    # 2. Timeout scenario (Gateway Timeout / Ambiguous Outcome)
+    class _TimeoutAdapter:
+        def create_payment_link(self, request):
+            from app.gateway_adapters import PaymentAdapterTimeoutError
+            raise PaymentAdapterTimeoutError("Gateway network timeout")
+
+    monkeypatch.setattr("app.recovery_executor.get_payment_adapter", lambda settings: _TimeoutAdapter())
+
+    res_timeout = client.post(f"/api/v1/opportunities/{opp_id}/execute")
+    assert res_timeout.status_code == 504
+    payload_timeout = res_timeout.json()
+    assert payload_timeout["success"] is False
+    assert payload_timeout["error"]["code"] == "GATEWAY_TIMEOUT"
+    assert payload_timeout["error"]["retryable"] is False
+    assert payload_timeout["error"]["ambiguous_outcome"] is True
+
