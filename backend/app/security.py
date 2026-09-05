@@ -7,6 +7,8 @@ from fastapi import Security
 from fastapi.security import APIKeyHeader, HTTPBearer, HTTPAuthorizationCredentials
 
 
+import re
+
 SENSITIVE_KEYS = {
     "authorization",
     "token",
@@ -42,6 +44,22 @@ def verify_security_guard(
     return True
 
 
+def sanitize_error_message(message: str | None) -> str:
+    """Sanitize error messages by stripping secrets, tokens, and authorization headers."""
+    if not message:
+        return ""
+    sanitized = str(message)
+    sanitized = re.sub(r"Bearer\s+[A-Za-z0-9_\-\.]+", "Bearer [REDACTED]", sanitized, flags=re.IGNORECASE)
+    sanitized = re.sub(r"Basic\s+[A-Za-z0-9+/=]+", "Basic [REDACTED]", sanitized, flags=re.IGNORECASE)
+    sanitized = re.sub(
+        r"(key_secret|secret|password|token|api_key|auth_token)\s*[:=]\s*['\"]?[^\s,;'\"]+['\"]?",
+        r"\1=[REDACTED]",
+        sanitized,
+        flags=re.IGNORECASE,
+    )
+    return sanitized
+
+
 def redact_sensitive_data(value: Any) -> Any:
     if isinstance(value, Mapping):
         redacted: dict[str, Any] = {}
@@ -60,6 +78,11 @@ def redact_sensitive_data(value: Any) -> Any:
     if isinstance(value, tuple):
         return tuple(redact_sensitive_data(item) for item in value)
 
+    if isinstance(value, str):
+        lower_str = value.lower().strip()
+        if lower_str.startswith("bearer ") or lower_str.startswith("basic "):
+            return "[REDACTED]"
+
     return value
 
 
@@ -68,6 +91,6 @@ def safe_error_payload(*, code: str, message: str) -> dict:
         "success": False,
         "error": {
             "code": code,
-            "message": message,
+            "message": sanitize_error_message(message),
         },
     }

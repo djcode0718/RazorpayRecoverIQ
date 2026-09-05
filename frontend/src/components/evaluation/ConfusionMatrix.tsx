@@ -111,7 +111,7 @@ export function ConfusionMatrix({ drilldown }: ConfusionMatrixProps) {
         <div className="matrix-footer-item">
           <span className="foot-lbl">TOTAL INTERVENTION EXPENSE:</span>
           <strong className="foot-val font-mono">
-            {formatMinorCurrency(drilldown.false_positive_cost.intervention_cost_minor)}
+            {formatMinorCurrency(drilldown.summary.intervention_cost_minor)}
           </strong>
         </div>
         <div className="matrix-footer-item">

@@ -21,17 +21,21 @@ export function SampleTestCasesTable({ drilldown }: SampleTestCasesTableProps) {
 
   // Generate synthetic representative test rows if empty
   const testCases = errors.length > 0
-    ? errors.map((err, idx) => ({
-        id: err.case_id || idx + 1,
-        status: err.error_type === "FALSE_POSITIVE" || err.error_type === "FALSE_NEGATIVE" ? "FAILED" : "PASSED",
-        errorType: err.error_type,
-        expected: formatActionShort(err.actual_action),
-        actual: formatActionShort(err.predicted_action),
-        failureReason: err.failure_reason || "Transient Network Timeout",
-        evidence: err.error_type === "FALSE_POSITIVE"
-          ? "Unrecoverable decline incorrectly classified as viable"
-          : "Viable customer payment missed by threshold guardrail",
-      }))
+    ? errors.map((err, idx) => {
+        const errorTypeUpper = (err.error_type || "").toUpperCase();
+        const isError = errorTypeUpper === "FALSE_POSITIVE" || errorTypeUpper === "FALSE_NEGATIVE";
+        return {
+          id: err.case_id || idx + 1,
+          status: isError ? "FAILED" : "PASSED",
+          errorType: errorTypeUpper || "ERROR",
+          expected: formatActionShort(err.actual_action),
+          actual: formatActionShort(err.predicted_action),
+          failureReason: err.failure_reason || "Transient Network Timeout",
+          evidence: errorTypeUpper === "FALSE_POSITIVE"
+            ? "Unrecoverable decline incorrectly classified as viable"
+            : "Viable customer payment missed by threshold guardrail",
+        };
+      })
     : [
         {
           id: 101,

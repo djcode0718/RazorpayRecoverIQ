@@ -24,7 +24,14 @@ class Settings(BaseSettings):
     groq_model: str = "openai/gpt-oss-20b"
     gemini_api_key: str = ""
     gemini_model: str = "gemini-3.6-flash"
+    razorpay_mcp_enabled: bool = False
+    razorpay_mcp_endpoint: str = "https://mcp.razorpay.com/mcp"
+    razorpay_mcp_auth_token: str = ""
+    razorpay_mcp_timeout_seconds: float = 10.0
+
     payment_adapter_mode: str = "simulation"
+    demo_payment_link_override: str = "off"
+    demo_payment_link_url: str = "https://razorpay.com/payment-link/plink_TWqxj6SdmOX88j/test"
     internal_webhook_replay_enabled: bool = True
     log_level: str = "DEBUG"
     log_sql_queries: bool = True
@@ -51,6 +58,14 @@ class Settings(BaseSettings):
     @property
     def razorpay_live_mode_detected(self) -> bool:
         return (self.razorpay_key_id or "").strip().startswith("rzp_live_")
+
+    @property
+    def razorpay_mcp_configured(self) -> bool:
+        if not self.razorpay_mcp_enabled:
+            return False
+        if not self.razorpay_mcp_endpoint.strip():
+            return False
+        return bool(self.razorpay_mcp_auth_token.strip() or self.razorpay_test_mode_keys)
 
 
 @lru_cache(maxsize=1)

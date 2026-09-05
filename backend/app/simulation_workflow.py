@@ -3,6 +3,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from .gateway_adapters import PaymentAdapterError
 from .models import Payment, RecoveryPaymentLink
 from .outcome_verifier import verify_outcomes_for_payment, verify_outcomes_for_payment_link
 from .policy_engine import evaluate_policy_for_decision
@@ -187,7 +188,7 @@ def run_detection_to_verification_flow(
                 }
             )
             workflow["business_events"].append("recovery.executed")
-        except ValueError as exc:
+        except (ValueError, PaymentAdapterError) as exc:
             workflow["stages"].append(
                 {
                     "stage": "execution",
